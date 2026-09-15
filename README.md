@@ -2,7 +2,7 @@
 
 A personal Tesla data logger and TeslaFi replacement, built on Tesla's official Fleet Telemetry. It logs drives, charges, idle and sleep time from your own car into your own database, and imports your TeslaFi history.
 
-**Status:** phases 0 to 3 are built and tested; phase 4 is in progress. Running it against a real car needs a server, a domain and a Tesla developer app: follow [docs/runbooks/deploy.md](docs/runbooks/deploy.md). Build details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and build phases.
+**Status:** phases 0 to 3 are built and tested, and the TeslaFi-style web app is built; phase 4 is in progress. Running it against a real car needs a server, a domain and a Tesla developer app: follow [docs/runbooks/deploy.md](docs/runbooks/deploy.md). Build details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quickstart (phase 0)
 
@@ -50,11 +50,37 @@ teslai gate history ~/teslafi-export --tz America/Chicago \
 
 Each month passes when drive count, miles, charge count and kWh added are within 1% of TeslaFi and drive miles agree with the odometer. The command exits non-zero if any month fails.
 
+## Web app
+
+The web app shows what TeslaFi shows, in a dark, fast interface:
+
+- **Status bar:** state, battery, range, odometer and software, and a top-down car with tire pressures, temperatures and the lock.
+- **Today:** the battery curve shaded by drives, charges and sleep, a session timeline, and daily totals.
+- **Drives, Charges and Parked:** filterable lists with totals, charts and charging locations.
+- **Drive and charge detail:** the route map plus speed, battery, power, temperature and charger-power charts, with previous and next.
+- **Calendar and analytics:** month and year calendars, battery health, efficiency by temperature and speed, tire pressure, and a lifetime map.
+
+To try it without a car, generate six months of synthetic history for a fictional demo car:
+
+```bash
+docker compose up -d
+teslai demo seed --days 180
+```
+
+Then sign in at http://localhost:8000. The Docker image builds the web app automatically. To work on the frontend with hot reload, run the API on port 8000 and start Vite, which proxies `/api` to it:
+
+```bash
+cd web && npm ci && npm run dev
+```
+
 ## Development
 
 ```bash
-pytest -q
 ruff check .
+pytest -q -m "not integration"
+TESLAI_TEST_DATABASE_URL=postgresql+psycopg://teslai:<password>@localhost:5432/postgres \
+  TESLAI_TEST_MQTT_HOST=localhost pytest -q -m integration
+cd web && npm run lint && npm run build
 ```
 
 Test fixtures in this repository are synthetic. Never commit TeslaFi exports, recorded telemetry, `.env` files or anything under `secrets/`.

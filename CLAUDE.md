@@ -6,9 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 teslai replaces TeslaFi.com for the owner's own Tesla: logging, analytics, alerts and, later, controls, plus import of 46 months of TeslaFi history. **Scope is personal tool first.** Sharing with other owners (hosted or self-host kit) is a separate decision behind the sharing gate in `docs/ARCHITECTURE.md` section 8. Do not build signup, invites, RLS policies, community features or legal pages before that gate passes.
 
-## Status
+## Status and commands
 
-**Architecture approved in principle; no application code yet.** The design is `docs/ARCHITECTURE.md`; its "Decisions made" table is settled (stack: Python 3.12 + FastAPI, React + Vite + TypeScript, PostgreSQL 16 + PostGIS; license MIT). Start phase 0 only on the owner's explicit go-ahead, and follow the phase order in section 8. Deferred work is in `TODOS.md`. There are no build, lint, or test commands yet. Update this file when phase 0 lands.
+Phases 0 to 3 are built (ingest, TeslaFi import, sessions, alerts, owner login), plus a TeslaFi-style React web app. Phase 4 (controls, share links) is not built. Build status lives in `docs/ARCHITECTURE.md`.
+
+- Python: `ruff check .`, `pytest -q -m "not integration"`; integration tests need `TESLAI_TEST_DATABASE_URL` and `TESLAI_TEST_MQTT_HOST` pointing at the compose Postgres and Mosquitto.
+- Web (`web/`, React + Vite + TypeScript + Tailwind + ECharts + MapLibre): `npm run lint`, `npm run build`. The build writes to `teslai/api/web` (git-ignored), which FastAPI serves for every non-API path.
+- Demo data: `teslai demo seed --days 180` writes synthetic samples and sessions for a fictional car.
+- Web endpoints live in `teslai/api/views.py`; derived views (calendar, efficiency, locations, tracks) are pure functions in `teslai/insights.py`; time series live in the `samples` table (`teslai/samples.py`).
+- Charts follow the dataviz rules: one y-axis per chart, 2px lines, bars at most 24px, legends for two or more series.
 
 ## Load-bearing design constraints
 

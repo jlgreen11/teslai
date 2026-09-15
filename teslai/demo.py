@@ -173,14 +173,18 @@ class DemoGenerator:
             weekday = day.weekday() < 5
             here = HOME
             t = base + timedelta(hours=7, minutes=self.rng.randint(15, 55))
-            self._row(base + timedelta(hours=1), "asleep", None, day_index=di)
+            if self.rows and self.rows[-1].ts < base + timedelta(hours=1):
+                # Skip when last night's charge is still running past 1 AM.
+                self._row(base + timedelta(hours=1), "asleep", None, day_index=di)
             if weekday:
                 t = self._drive(t, HOME, DESTINATIONS["Office"], di)
                 leave = base + timedelta(hours=17, minutes=self.rng.randint(0, 50))
                 self._park(t, leave, DESTINATIONS["Office"], di)
                 t = self._drive(leave, DESTINATIONS["Office"], HOME, di)
                 if self.rng.random() < 0.35:
-                    t = self._drive(t + timedelta(minutes=40), HOME, DESTINATIONS["Climbing gym"], di)
+                    gym = t + timedelta(minutes=40)
+                    self._park(t, gym, HOME, di)
+                    t = self._drive(gym, HOME, DESTINATIONS["Climbing gym"], di)
                     back = t + timedelta(minutes=self.rng.randint(70, 110))
                     self._park(t, back, DESTINATIONS["Climbing gym"], di)
                     t = self._drive(back, DESTINATIONS["Climbing gym"], HOME, di)

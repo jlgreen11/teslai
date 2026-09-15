@@ -13,3 +13,5 @@ recordings
 tests
 docs
 *.csv
+web/node_modules
+teslai/api/web
