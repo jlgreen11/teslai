@@ -752,6 +752,21 @@ def monitor(
             from teslai.rules import load_rule_config
 
             written = rebuild_all(engine, account_id)
+            if s.teslai_homeassistant:
+                try:
+                    import paho.mqtt.publish as mqtt_publish
+
+                    from teslai.homeassistant import publish_all
+
+                    msgs: list[dict] = []
+                    publish_all(engine, account_id,
+                                lambda t, p, r: msgs.append({"topic": t, "payload": p, "retain": r, "qos": 1}),
+                                datetime.now(UTC))
+                    if msgs:
+                        mqtt_publish.multiple(msgs, hostname=s.mqtt_host, port=s.mqtt_port,
+                                              client_id="teslai-homeassistant")
+                except Exception as err:  # noqa: BLE001 - Home Assistant is optional
+                    log.warning("Home Assistant publish failed: %s", str(err).splitlines()[0][:200])
             if any(written.values()):
                 log.info("live sessions rebuilt: %s", written)
             result = alerts.run_once(engine, account_id, notify, server_cert=cert,
