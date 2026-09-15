@@ -2,25 +2,38 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0e">
 <title>teslai login</title>
 <style>
-  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #fbfbfd; --line: #d2d2d7; --accent: #0a84ff; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #98989d; --bg: #1c1c1e; --line: #48484a; } }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
-         font: 16px/1.4 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--bg); }
-  form { width: 100%; max-width: 340px; display: grid; gap: 12px; }
-  h1 { font-size: 24px; margin: 0 0 8px; }
-  label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
-  input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--fg); }
-  button { font: inherit; padding: 11px; border: 0; border-radius: 10px; background: var(--accent); color: white; cursor: pointer; }
-  button:disabled { opacity: .6; }
-  #msg { min-height: 1.4em; color: #ff453a; font-size: 14px; margin: 0; }
+  :root { color-scheme: dark; --fg: #f4f5f7; --muted: #7c8189; --bg: #0b0c0e; --surface: #15171a; --surface-2: #1c1f23;
+          --line: rgba(255,255,255,0.08); --line-strong: rgba(255,255,255,0.18); --accent: #e82127; --focus: #3987e5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg);
+         background: radial-gradient(1200px 600px at 50% -10%, #1a1d22 0%, var(--bg) 60%); -webkit-font-smoothing: antialiased; }
+  form { width: 100%; max-width: 360px; display: grid; gap: 14px; padding: 28px; border: 1px solid var(--line);
+         border-radius: 20px; background: linear-gradient(180deg, rgba(28,31,35,0.9), rgba(21,23,26,0.9)); box-shadow: 0 30px 80px rgba(0,0,0,0.45); }
+  .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .brand svg { width: 26px; height: 26px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  .sub { margin: -6px 0 6px; color: var(--muted); font-size: 13px; }
+  label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  input { font: inherit; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface-2); color: var(--fg); outline: none; }
+  input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(57,135,229,0.25); }
+  button { font: inherit; font-weight: 600; margin-top: 4px; padding: 12px; border: 0; border-radius: 999px; background: var(--fg); color: var(--bg); cursor: pointer; }
+  button:hover { background: #ffffff; }
+  button:disabled { opacity: .6; cursor: default; }
+  #msg { min-height: 1.4em; color: #ff8a8a; font-size: 13px; margin: 0; }
 </style>
 </head>
 <body>
 <form id="f">
-  <h1>teslai</h1>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.6 0 7 .8 9.5 2.2l-1.2 1.6C18 5.6 15.2 5 12 5s-6 .6-8.3 1.8L2.5 5.2C5 3.8 8.4 3 12 3zm0 4c1.4 0 2.6.1 3.7.4L12 21 8.3 7.4C9.4 7.1 10.6 7 12 7z" fill="#e82127"/></svg>
+    <h1>teslai</h1>
+  </div>
+  <p class="sub">Sign in to see your car.</p>
   <label>Email <input name="email" type="email" autocomplete="username" required></label>
   <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
   <label>Authenticator code <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required></label>
