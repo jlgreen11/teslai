@@ -100,8 +100,7 @@ class SessionBuilder:
         return self.r.value(at, name)
 
     def _last(self, at: datetime, name: str):
-        fv = self.r.snapshot(at).get(name)
-        return fv.value if fv is not None else None
+        return self.r.last_known(at, name)
 
     def _open(self, kind: SessionKind, at: datetime) -> None:
         s = Session(kind, at, start_odometer=self._last(at, "Odometer"),
@@ -155,11 +154,11 @@ class SessionBuilder:
         for ts, group in groupby(items, key=lambda i: i[0]):
             group = list(group)
             for _, order, _, item in group:
-                if order == 0:
-                    self._connectivity(item)  # type: ignore[arg-type]
-            for _, order, _, item in group:
                 if order == 1:
                     self.r.apply(item)  # type: ignore[arg-type]
+            for _, order, _, item in group:
+                if order == 0:
+                    self._connectivity(item)  # type: ignore[arg-type]
             self._evaluate(ts)
             disconnects = [item for _, order, _, item in group if order == 2]
             for item in disconnects:

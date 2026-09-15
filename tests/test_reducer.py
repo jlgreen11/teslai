@@ -50,9 +50,28 @@ def test_disconnect_invalidates_every_field():
 def test_events_older_than_disconnect_do_not_revive_state():
     r = reducer()
     r.connectivity(T0 + timedelta(minutes=5), connected=False)
-    assert r.apply(ev("Gear", "ShiftStateD", minutes=4)) is False
-    assert r.apply(ev("Gear", "ShiftStateP", minutes=6)) is True
+    r.apply(ev("Gear", "ShiftStateD", minutes=4))
+    assert r.value(T0 + timedelta(minutes=6), "Gear") is None
+    assert r.value(T0 + timedelta(minutes=4, seconds=30), "Gear") == "ShiftStateD"
+    r.apply(ev("Gear", "ShiftStateP", minutes=6))
     assert r.value(T0 + timedelta(minutes=7), "Gear") == "ShiftStateP"
+
+
+def test_past_values_remain_queryable_after_newer_events():
+    r = reducer()
+    r.apply(ev("Odometer", 1000.0, minutes=0))
+    r.apply(ev("Odometer", 1012.0, minutes=20))
+    assert r.value(T0 + timedelta(minutes=10), "Odometer") == 1000.0
+    assert r.value(T0 + timedelta(minutes=25), "Odometer") == 1012.0
+
+
+def test_history_is_pruned_but_keeps_carry_forward_value():
+    r = StateReducer(load_field_specs(), history_seconds=3600)
+    r.apply(ev("Gear", "ShiftStateD", minutes=0))
+    for m in range(1, 300, 10):
+        r.apply(ev("Odometer", 1000.0 + m, minutes=m))
+    assert len(r._history["Odometer"]) <= 8
+    assert r.value(T0 + timedelta(minutes=299), "Gear") == "ShiftStateD"
 
 
 def test_duplicate_and_out_of_order_events_are_idempotent():
