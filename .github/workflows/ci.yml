@@ -24,6 +24,25 @@ jobs:
         run: |
           ! git ls-files | grep -E '\.(pem|key)$|(^|/)\.env$|(^|/)secrets/'
 
+  runtime-imports:
+    # Install without dev extras and import every entry point, so a runtime module
+    # can never depend on a package that only the test environment has.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: |
+          python - <<'EOF'
+          import importlib, pkgutil, teslai
+          for m in pkgutil.walk_packages(teslai.__path__, "teslai."):
+              importlib.import_module(m.name)
+          print("all teslai modules import with runtime dependencies only")
+          EOF
+      - run: teslai --help
+
   integration:
     runs-on: ubuntu-latest
     services:
