@@ -24,7 +24,7 @@ def test_upsert_and_enrich_drive_stats(engine):
         assert upsert_samples(conn, a, v, rows[:5], "test") == 5
         repo.replace_sessions(conn, a, v, t0 - timedelta(hours=1), t0 + timedelta(hours=1), [
             Session("drive", t0, t0 + timedelta(minutes=20), start_odometer=100.0, end_odometer=110.0,
-                    start_battery=80, end_battery=76)], "test", 1)
+                    start_battery=80, end_battery=76)], "teslafi_import", 1)
         enrich_sessions(conn, a, v, t0 - timedelta(hours=1), t0 + timedelta(hours=1))
         d = conn.execute(text("SELECT energy_used_kwh, rated_miles_used, max_speed, round(avg_outside_temp::numeric, 1) AS ot "
                               "FROM sessions WHERE vehicle_id = :v"), {"v": v}).one()

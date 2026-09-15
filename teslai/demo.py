@@ -165,7 +165,7 @@ class DemoGenerator:
         for di in range(self.days):
             day = self.start + timedelta(days=di)
             if di and di % 41 == 0:
-                major, minor, patch = self.car.version.split(".")
+                major, minor, _patch = self.car.version.split(".")
                 self.car.version = f"{major}.{int(minor) + 6}.{self.rng.randint(1, 9)}"
             if self.rng.random() < 0.012:
                 self.car.leak_until = day + timedelta(days=9)
