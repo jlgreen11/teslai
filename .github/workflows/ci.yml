@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q -m "not integration"
+      - name: Error docs are up to date
+        run: |
+          teslai errors docs --out /tmp/errors.md
+          diff -u docs/errors.md /tmp/errors.md
+      - name: No personal data or secrets committed
+        run: |
+          ! git ls-files | grep -E '\.(pem|key)$|(^|/)\.env$|(^|/)secrets/'
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: teslai
+          POSTGRES_PASSWORD: teslai
+          POSTGRES_DB: teslai
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U teslai"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TESLAI_TEST_DATABASE_URL: postgresql+psycopg://teslai:teslai@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q -m integration

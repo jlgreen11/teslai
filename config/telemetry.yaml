@@ -1,0 +1,83 @@
+# Fleet Telemetry subscription for teslai.
+#
+# kind:
+#   state       enum or flag; carried forward with no age limit, cleared only by a
+#               disconnect or a session boundary.
+#   continuous  numeric or location; carried forward until the car disconnects.
+#               stale_after_seconds, when set, marks the value unknown if no update
+#               arrives for that long while connected (used for speed and power, which
+#               can stop reporting instead of reporting zero).
+# interval_seconds: minimum seconds between sends for this field (Tesla-side rate).
+# minimum_delta:    minimum change before Tesla sends an update (numeric fields).
+#
+# RouteLine and MinutesToArrival are intentionally omitted: they change constantly
+# while driving and no v1 feature needs them.
+fields:
+  # --- driving ---
+  Gear:                        {kind: state, interval_seconds: 1}
+  VehicleSpeed:                {kind: continuous, interval_seconds: 5, minimum_delta: 1, stale_after_seconds: 300}
+  Location:                    {kind: continuous, interval_seconds: 10}
+  Odometer:                    {kind: continuous, interval_seconds: 60, minimum_delta: 0.1}
+  MilesSinceReset:             {kind: continuous, interval_seconds: 300}
+  SelfDrivingMilesSinceReset:  {kind: continuous, interval_seconds: 300}
+  DestinationName:             {kind: state, interval_seconds: 60}
+
+  # --- battery and energy ---
+  BatteryLevel:                {kind: continuous, interval_seconds: 60, minimum_delta: 0.5}
+  EnergyRemaining:             {kind: continuous, interval_seconds: 60, minimum_delta: 0.1}
+  RatedRange:                  {kind: continuous, interval_seconds: 60, minimum_delta: 1}
+  IdealBatteryRange:           {kind: continuous, interval_seconds: 300, minimum_delta: 1}
+  EstBatteryRange:             {kind: continuous, interval_seconds: 300, minimum_delta: 1}
+  LifetimeEnergyUsed:          {kind: continuous, interval_seconds: 300, minimum_delta: 0.1}
+  PackVoltage:                 {kind: continuous, interval_seconds: 30, minimum_delta: 1, stale_after_seconds: 600}
+  PackCurrent:                 {kind: continuous, interval_seconds: 10, minimum_delta: 2, stale_after_seconds: 300}
+  BatteryHeaterOn:             {kind: state, interval_seconds: 60}
+
+  # --- charging ---
+  DetailedChargeState:         {kind: state, interval_seconds: 1}
+  ChargingCableType:           {kind: state, interval_seconds: 5}
+  ChargePort:                  {kind: state, interval_seconds: 5}
+  ChargePortColdWeatherMode:   {kind: state, interval_seconds: 300}
+  FastChargerPresent:          {kind: state, interval_seconds: 5}
+  FastChargerType:             {kind: state, interval_seconds: 5}
+  ChargeLimitSoc:              {kind: state, interval_seconds: 60}
+  ChargeCurrentRequest:        {kind: state, interval_seconds: 60}
+  ScheduledChargingStartTime:  {kind: state, interval_seconds: 300}
+  ChargerPhases:               {kind: state, interval_seconds: 60}
+  ChargeAmps:                  {kind: continuous, interval_seconds: 30, minimum_delta: 1, stale_after_seconds: 600}
+  ChargerVoltage:              {kind: continuous, interval_seconds: 30, minimum_delta: 5, stale_after_seconds: 600}
+  ChargeRateMilePerHour:       {kind: continuous, interval_seconds: 60, minimum_delta: 1, stale_after_seconds: 600}
+  ACChargingPower:             {kind: continuous, interval_seconds: 30, minimum_delta: 0.2, stale_after_seconds: 600}
+  DCChargingPower:             {kind: continuous, interval_seconds: 10, minimum_delta: 1, stale_after_seconds: 300}
+  ACChargingEnergyIn:          {kind: continuous, interval_seconds: 60, minimum_delta: 0.1}
+  DCChargingEnergyIn:          {kind: continuous, interval_seconds: 30, minimum_delta: 0.1}
+
+  # --- climate ---
+  InsideTemp:                  {kind: continuous, interval_seconds: 300, minimum_delta: 0.5}
+  OutsideTemp:                 {kind: continuous, interval_seconds: 300, minimum_delta: 0.5}
+  HvacPower:                   {kind: state, interval_seconds: 30}
+  HvacFanStatus:               {kind: state, interval_seconds: 60}
+  HvacLeftTemperatureRequest:  {kind: state, interval_seconds: 300}
+  DefrostMode:                 {kind: state, interval_seconds: 60}
+  CabinOverheatProtectionMode: {kind: state, interval_seconds: 3600}
+
+  # --- security and body ---
+  Locked:                      {kind: state, interval_seconds: 5}
+  SentryMode:                  {kind: state, interval_seconds: 5}
+  DoorState:                   {kind: state, interval_seconds: 5}
+  FdWindow:                    {kind: state, interval_seconds: 10}
+  FpWindow:                    {kind: state, interval_seconds: 10}
+  RdWindow:                    {kind: state, interval_seconds: 10}
+  RpWindow:                    {kind: state, interval_seconds: 10}
+  TpmsPressureFl:              {kind: continuous, interval_seconds: 3600, minimum_delta: 0.05}
+  TpmsPressureFr:              {kind: continuous, interval_seconds: 3600, minimum_delta: 0.05}
+  TpmsPressureRl:              {kind: continuous, interval_seconds: 3600, minimum_delta: 0.05}
+  TpmsPressureRr:              {kind: continuous, interval_seconds: 3600, minimum_delta: 0.05}
+
+  # --- vehicle info ---
+  Version:                     {kind: state, interval_seconds: 3600}
+  SoftwareUpdateVersion:       {kind: state, interval_seconds: 3600}
+  VehicleName:                 {kind: state, interval_seconds: 3600}
+  WheelType:                   {kind: state, interval_seconds: 3600}
+  RightHandDrive:              {kind: state, interval_seconds: 3600}
+  EuropeVehicle:               {kind: state, interval_seconds: 3600}

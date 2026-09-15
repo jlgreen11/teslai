@@ -1,0 +1,52 @@
+# Enum meanings used by the session builder. Version bumps force a rebuild.
+# Values are Fleet Telemetry enum names; TeslaFi CSV values are mapped under `teslafi`.
+# Verify names against teslamotors/fleet-telemetry protos when firmware changes.
+# Any value not listed maps to `unknown`, and a null value always maps to `unknown`.
+version: 1
+
+fields:
+  Gear:
+    telemetry:
+      ShiftStateP: park
+      ShiftStateR: reverse
+      ShiftStateN: neutral
+      ShiftStateD: drive
+      ShiftStateInvalid: unknown
+      ShiftStateSNA: unknown
+    teslafi:
+      P: park
+      R: reverse
+      N: neutral
+      D: drive
+
+  DetailedChargeState:
+    telemetry:
+      DetailedChargeStateDisconnected: disconnected
+      DetailedChargeStateNoPower: plugged_idle
+      DetailedChargeStateStarting: charging
+      DetailedChargeStateCharging: charging
+      DetailedChargeStateComplete: complete
+      DetailedChargeStateStopped: stopped
+      DetailedChargeStateInvalid: unknown
+    teslafi:
+      Disconnected: disconnected
+      NoPower: plugged_idle
+      Starting: charging
+      Charging: charging
+      Complete: complete
+      Stopped: stopped
+
+  ChargingCableType:
+    telemetry:
+      CableTypeIEC: plugged
+      CableTypeSAE: plugged
+      CableTypeGB_AC: plugged
+      CableTypeGB_DC: plugged
+      CableTypeSNA: none
+      CableTypeInvalid: none
+    teslafi:
+      IEC: plugged
+      SAE: plugged
+      GB_AC: plugged
+      GB_DC: plugged
+      "<invalid>": none
