@@ -624,7 +624,7 @@ def monitor(
     once: bool = typer.Option(False, help="Run the checks once and exit."),
     interval: int = typer.Option(60, help="Seconds between checks."),
 ) -> None:
-    """Evaluate health rules, notify on new and resolved alerts, keep the Tesla login fresh."""
+    """Build live sessions, evaluate alert rules, notify, and keep the Tesla login fresh."""
     import logging
     import time
     from datetime import UTC, datetime, timedelta
@@ -651,8 +651,12 @@ def monitor(
     while True:
         try:
             account_id = single_account_id(engine)
+            from teslai.live import rebuild_all
             from teslai.rules import load_rule_config
 
+            written = rebuild_all(engine, account_id)
+            if any(written.values()):
+                log.info("live sessions rebuilt: %s", written)
             result = alerts.run_once(engine, account_id, notify, server_cert=cert,
                                      backup_dir=s.teslai_backup_dir,
                                      rule_config=load_rule_config())
