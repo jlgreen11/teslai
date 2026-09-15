@@ -1,5 +1,9 @@
-# teslai stack. Phase 0 services: db, mosquitto.
-# fleet-telemetry, vehicle-command, app, worker and caddy are added as each phase lands.
+# teslai stack.
+#   default:  db, mosquitto, app (localhost:8000), worker
+#   edge:     caddy, public key hosting on TESLAI_DOMAIN (docker compose --profile edge up -d)
+#   edge also runs fleet-telemetry (car mTLS on TESLAI_TELEMETRY_PORT) and the
+#   vehicle-command proxy (internal network only). Run `teslai telemetry server-config` first.
+# Pin image digests before deploying to the VM (docs/ARCHITECTURE.md, section 9).
 # Pin image digests before deploying to the VM (see docs/ARCHITECTURE.md, section 9).
 name: teslai
 
@@ -31,6 +35,81 @@ services:
       - ./ops/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mqttdata:/mosquitto/data
 
+  app:
+    build: .
+    image: teslai-app:dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
+      MQTT_HOST: mosquitto
+      TESLAI_SECRETS_DIR: /app/secrets
+    volumes:
+      - ./secrets:/app/secrets:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    image: teslai-app:dev
+    restart: unless-stopped
+    command: ["teslai", "worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
+      MQTT_HOST: mosquitto
+      TESLAI_SECRETS_DIR: /app/secrets
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      app:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+
+  caddy:
+    image: caddy:2
+    profiles: ["edge"]
+    restart: unless-stopped
+    environment:
+      TESLAI_DOMAIN: ${TESLAI_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./secrets/com.tesla.3p.public-key.pem:/srv/tesla/com.tesla.3p.public-key.pem:ro
+      - caddydata:/data
+
+  fleet-telemetry:
+    image: tesla/fleet-telemetry:v0.9.0
+    profiles: ["edge"]
+    restart: unless-stopped
+    command: ["/fleet-telemetry", "-config=/etc/teslai-certs/fleet-telemetry.json"]
+    ports:
+      - "${TESLAI_TELEMETRY_PORT:-4443}:${TESLAI_TELEMETRY_PORT:-4443}"
+    volumes:
+      - ./secrets:/etc/teslai-certs:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+
+  vehicle-command:
+    image: tesla/vehicle-command:latest
+    profiles: ["edge"]
+    restart: unless-stopped
+    command: ["tesla-http-proxy", "-tls-key", "/secrets/proxy-tls.key.pem",
+              "-cert", "/secrets/proxy-tls.cert.pem",
+              "-key-file", "/secrets/tesla-app.private-key.pem",
+              "-host", "0.0.0.0", "-port", "4443"]
+    expose:
+      - "4443"
+    volumes:
+      - ./secrets:/secrets:ro
+
 volumes:
   dbdata:
   mqttdata:
+  caddydata:

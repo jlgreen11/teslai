@@ -25,6 +25,24 @@ tesla_app = typer.Typer(help="Tesla developer app, login and pairing.")
 app.add_typer(tesla_app, name="tesla")
 telemetry_app = typer.Typer(help="The car's Fleet Telemetry config.")
 app.add_typer(telemetry_app, name="telemetry")
+db_app = typer.Typer(help="Database migrations.")
+app.add_typer(db_app, name="db")
+
+
+@db_app.command("upgrade")
+def db_upgrade() -> None:
+    """Apply all database migrations."""
+    from alembic import command
+    from alembic.config import Config
+
+    from teslai.paths import REPO_DIR
+    from teslai.settings import Settings
+
+    cfg = Config(str(REPO_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(REPO_DIR / "migrations"))
+    cfg.attributes["url"] = Settings().database_url
+    command.upgrade(cfg, "head")
+    typer.echo("Database is at the latest migration.")
 
 
 def http_client(**kwargs):
@@ -282,6 +300,7 @@ def worker(
 ) -> None:
     """Consume fleet-telemetry messages from MQTT into the database."""
     import logging
+    import time
 
     from sqlalchemy import create_engine
 
@@ -290,8 +309,18 @@ def worker(
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     s = Settings()
-    worker_mod.run(create_engine(s.database_url), s.mqtt_host, s.mqtt_port, s.mqtt_topic_base,
-                   client_id=client_id)
+    engine = create_engine(s.database_url)
+    while True:
+        try:
+            account_id = worker_mod.single_account_id(engine)
+            break
+        except Exception as err:  # noqa: BLE001 - keep waiting for first import or login
+            reason = str(err).splitlines()[0][:160]
+            logging.getLogger("teslai.worker").warning(
+                "waiting for an account (run an import or teslai tesla login): %s", reason)
+            time.sleep(60)
+    worker_mod.run(engine, s.mqtt_host, s.mqtt_port, s.mqtt_topic_base, client_id=client_id,
+                   account_id=account_id)
 
 
 @tesla_app.command("register")
@@ -406,6 +435,23 @@ def _access_token(s) -> str:
     with http_client() as http:
         return get_access_token(engine, cipher, single_account_id(engine),
                                 lambda rt: auth.refresh(http, s.tesla_client_id, rt))
+
+
+@telemetry_app.command("server-config")
+def telemetry_server_config(
+    out: Path = typer.Option(Path("secrets/fleet-telemetry.json"),
+                             help="Where to write fleet-telemetry's config."),
+) -> None:
+    """Write fleet-telemetry's server config and create the signing proxy's certificate."""
+    from teslai.server_config import ensure_proxy_cert, write_fleet_telemetry_config
+    from teslai.settings import Settings
+
+    s = Settings()
+    paths = SecretPaths(s.teslai_secrets_dir)
+    write_fleet_telemetry_config(out, port=s.teslai_telemetry_port, topic_base=s.mqtt_topic_base)
+    cert, _ = ensure_proxy_cert(paths)
+    typer.echo(f"Wrote {out} and {cert}.")
+    typer.echo("Start the edge services: docker compose --profile edge up -d")
 
 
 @telemetry_app.command("push")
