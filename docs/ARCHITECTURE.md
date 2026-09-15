@@ -2,7 +2,7 @@
 
 **Goal.** A product that replicates everything TeslaFi offers. The owner uses it first. It then opens to other Tesla owners as a hosted service, with the same code published for anyone to self-host.
 
-**Status.** Draft 3, 2026-09-14. No code until the remaining decisions in section 12 are answered.
+**Status.** Draft 3, 2026-09-14. All build-blocking decisions are made. Phases 0 through 3 can start on the owner's go-ahead. The product name and domain are due before phase 4.
 
 ## Decisions made
 
@@ -15,6 +15,10 @@
 | TeslaFi history | Downloaded once the importer exists | 2026-09-14 |
 | Build vs. adopt | Build. Existing loggers are single-user tools, not products. | 2026-09-14 |
 | Alert channels | Support all TeslaFi channels through one library | 2026-09-14 |
+| Stack | Python 3.12 + FastAPI, React + Vite + TypeScript, PostgreSQL 16 + PostGIS | 2026-09-14 |
+| License | MIT | 2026-09-14 |
+| Legal entity | Owner registers the Tesla developer app personally for self-use; an LLC is formed before the beta | 2026-09-14 |
+| Product name | Chosen before the beta. "teslai" stays the internal repo name. | 2026-09-14 |
 
 **Changes from draft 2.**
 - Commands, schedules, triggers and community features are back in scope.
@@ -206,7 +210,7 @@ Sleep Modes is intentionally not replicated: with Fleet Telemetry the car sleeps
 | 1. Import and core | TeslaFi importer, session builder, reconciliation report passing on 46 months of history, day view | Download CSV, generate TeslaFi API token |
 | 2. Live personal use | Oracle VM, domain, Tesla developer app, telemetry live on the owner's car, analytics, alerts | Oracle and Tesla accounts, domain purchase, QR scan in Tesla app |
 | 3. Controls and automation | Commands, schedules, triggers, presets, Supercharger invoices, personal API | No |
-| 4. Multi-user beta | Signup, invites, onboarding, metering dashboard, legal pages, self-host wizard | Product name, legal entity, license choice |
+| 4. Multi-user beta | Signup, invites, onboarding, metering dashboard, legal pages, self-host wizard | Product name, domain, LLC |
 | 5–7. Parity completion | Maps and sharing, service log, community features, integrations | No |
 
 Cutover from TeslaFi happens at the end of phase 2, once the reconciliation report passes.
@@ -242,22 +246,15 @@ Cutover from TeslaFi happens at the end of phase 2, once the reconciliation repo
 
 ## 11. Open-source licensing
 
-| License | Effect |
-|---|---|
-| **AGPLv3** (recommended) | Anyone who runs a modified hosted copy must publish their changes. This protects a hosted service from closed forks. TeslaMate uses it. |
-| MIT | Maximum adoption, including closed commercial forks. |
+**MIT, chosen 2026-09-14.** It allows maximum adoption, including closed commercial forks of the code. The hosted service's advantages are therefore operational, not legal: community data, a registered Tesla app, onboarding, and reliability.
 
 ---
 
-## 12. Remaining decisions
+## 12. Remaining decisions, due before phase 4
 
-1. **Product name.** Public name without "Tesla" in it, per Tesla's trademark guidelines. The repo can keep its name until launch.
-2. **Legal entity.** Tesla's public app registration asks for legal business details. Options: an existing company, a new LLC, or registering as an individual if Tesla allows it.
-3. **License.** AGPLv3 or MIT.
-4. **Domain.** Chosen after the name.
-5. **Stack.** Confirm Python + React + Postgres.
-
-The owner-only work in phases 0 and 1 does not depend on these, except the stack.
+1. **Product name.** A public name without "Tesla" in it, per Tesla's trademark guidelines.
+2. **Domain.** Chosen with the name. Phases 2 and 3 can use a temporary domain or subdomain, because the Tesla app's public key is tied to its domain and the app can be re-registered at launch.
+3. **LLC formation.** Needed before the public Tesla app registration and the first non-owner user.
 
 ## Sources
 

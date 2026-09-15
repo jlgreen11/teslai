@@ -8,7 +8,7 @@ teslai is a product that replicates everything TeslaFi.com offers. The owner use
 
 ## Status
 
-**Architecture review phase. Do not write application code yet.** The proposal is `docs/ARCHITECTURE.md`. Its "Decisions made" table is settled; section 12 lists what is still open. There are no build, lint, or test commands yet. Update this file when phase 0 lands.
+**Architecture approved in principle; no application code yet.** The design is `docs/ARCHITECTURE.md`; its "Decisions made" table is settled (stack: Python 3.12 + FastAPI, React + Vite + TypeScript, PostgreSQL 16 + PostGIS; license MIT). Start phase 0 only on the owner's explicit go-ahead, and follow the phase order in section 8. There are no build, lint, or test commands yet. Update this file when phase 0 lands.
 
 ## Load-bearing design constraints
 
