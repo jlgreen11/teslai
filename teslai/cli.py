@@ -759,9 +759,11 @@ def monitor(
                     from teslai.homeassistant import publish_all
 
                     msgs: list[dict] = []
-                    publish_all(engine, account_id,
-                                lambda t, p, r: msgs.append({"topic": t, "payload": p, "retain": r, "qos": 1}),
-                                datetime.now(UTC))
+
+                    def collect(topic: str, payload: str, retain: bool, out: list = msgs) -> None:
+                        out.append({"topic": topic, "payload": payload, "retain": retain, "qos": 1})
+
+                    publish_all(engine, account_id, collect, datetime.now(UTC))
                     if msgs:
                         mqtt_publish.multiple(msgs, hostname=s.mqtt_host, port=s.mqtt_port,
                                               client_id="teslai-homeassistant")

@@ -50,7 +50,7 @@ def discovery_messages(vin: str, name: str) -> list[tuple[str, str]]:
     out = []
     for e in ENTITIES:
         cfg = {"name": e.name, "unique_id": f"{uid}_{e.object_id}", "state_topic": state_topic(vin),
-               "value_template": "{{ value_json.%s }}" % e.object_id, "device": device}
+               "value_template": f"{{{{ value_json.{e.object_id} }}}}", "device": device}
         if e.unit:
             cfg["unit_of_measurement"] = e.unit
         if e.device_class:
