@@ -3,7 +3,8 @@
 #   edge:     caddy, public key hosting on TESLAI_DOMAIN (docker compose --profile edge up -d)
 #   edge also runs fleet-telemetry (car mTLS on TESLAI_TELEMETRY_PORT) and the
 #   vehicle-command proxy (internal network only). Run `teslai telemetry server-config` first.
-# Pin image digests before deploying to the VM (docs/ARCHITECTURE.md, section 9).
+# Containers run as TESLAI_UID:TESLAI_GID (written by `teslai init`) so they can read the
+# 0600 files in secrets/. Pin image digests before deploying (docs/ARCHITECTURE.md, section 9).
 # Pin image digests before deploying to the VM (see docs/ARCHITECTURE.md, section 9).
 name: teslai
 
@@ -39,6 +40,7 @@ services:
     build: .
     image: teslai-app:dev
     restart: unless-stopped
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
@@ -55,6 +57,7 @@ services:
   worker:
     image: teslai-app:dev
     restart: unless-stopped
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
     command: ["teslai", "worker"]
     env_file: .env
     environment:
@@ -87,6 +90,7 @@ services:
     image: tesla/fleet-telemetry:v0.9.0
     profiles: ["edge"]
     restart: unless-stopped
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
     command: ["/fleet-telemetry", "-config=/etc/teslai-certs/fleet-telemetry.json"]
     ports:
       - "${TESLAI_TELEMETRY_PORT:-4443}:${TESLAI_TELEMETRY_PORT:-4443}"
@@ -100,7 +104,9 @@ services:
     image: tesla/vehicle-command:latest
     profiles: ["edge"]
     restart: unless-stopped
-    command: ["tesla-http-proxy", "-tls-key", "/secrets/proxy-tls.key.pem",
+    # The image's entrypoint is tesla-http-proxy; these are its flags only.
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
+    command: ["-tls-key", "/secrets/proxy-tls.key.pem",
               "-cert", "/secrets/proxy-tls.cert.pem",
               "-key-file", "/secrets/tesla-app.private-key.pem",
               "-host", "0.0.0.0", "-port", "4443"]

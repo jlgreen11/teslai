@@ -1,5 +1,6 @@
 """teslai operator CLI."""
 
+import os
 import secrets as pysecrets
 from pathlib import Path
 
@@ -171,10 +172,13 @@ def init(
         "DATABASE_URL": f"postgresql+psycopg://teslai:{db_password}@localhost:5432/teslai",
         "POSTGRES_PASSWORD": db_password,
         "TESLAI_SESSION_SECRET": pysecrets.token_urlsafe(32),
+        "TESLAI_UID": str(os.getuid()),
+        "TESLAI_GID": str(os.getgid()),
     }
     body = _render_env(template, values)
-    if "POSTGRES_PASSWORD=" not in body:
-        body += f"POSTGRES_PASSWORD={db_password}\n"
+    for key in ("POSTGRES_PASSWORD", "TESLAI_UID", "TESLAI_GID"):
+        if f"{key}=" not in body:
+            body += f"{key}={values.get(key, db_password)}\n"
     env_file.write_text(body)
     env_file.chmod(0o600)
     typer.echo(f"Wrote {env_file} and secrets in {secrets_dir}.")

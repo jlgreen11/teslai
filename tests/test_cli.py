@@ -29,6 +29,8 @@ def test_init_generates_env_and_valid_secrets(tmp_path, monkeypatch):
     assert "TESLAI_DOMAIN=cars.example.org" in env
     assert "TESLAI_TELEMETRY_HOST=telemetry.cars.example.org" in env
     assert "CHANGE_ME" not in env
+    import os
+    assert f"TESLAI_UID={os.getuid()}" in env and f"TESLAI_GID={os.getgid()}" in env
     assert oct((tmp_path / ".env").stat().st_mode)[-3:] == "600"
     paths = SecretPaths(tmp_path / "secrets")
     assert all(p.exists() for p in paths.all())
