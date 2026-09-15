@@ -4,7 +4,8 @@
 #   edge also runs fleet-telemetry (car mTLS on TESLAI_TELEMETRY_PORT) and the
 #   vehicle-command proxy (internal network only). Run `teslai telemetry server-config` first.
 # Containers run as TESLAI_UID:TESLAI_GID (written by `teslai init`) so they can read the
-# 0600 files in secrets/. Pin image digests before deploying (docs/ARCHITECTURE.md, section 9).
+# 0600 files in secrets/. Third-party images are pinned by multi-arch digest; update a pin
+# deliberately with `docker buildx imagetools inspect <image:tag>`.
 # Pin image digests before deploying to the VM (see docs/ARCHITECTURE.md, section 9).
 name: teslai
 
@@ -28,7 +29,7 @@ services:
       retries: 20
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2@sha256:6f8d8a947c506f8a2290ec65cd4bd2bc7cb4d43fb5f6271f861cb013e2ef9797
     restart: unless-stopped
     ports:
       - "127.0.0.1:1883:1883"
@@ -110,7 +111,7 @@ services:
         condition: service_healthy
 
   caddy:
-    image: caddy:2
+    image: caddy:2@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
     profiles: ["edge"]
     restart: unless-stopped
     environment:
@@ -124,7 +125,7 @@ services:
       - caddydata:/data
 
   fleet-telemetry:
-    image: tesla/fleet-telemetry:v0.9.0
+    image: tesla/fleet-telemetry:v0.9.0@sha256:f925c73f1f8ddc8aa97440bf96c0955403936046ba51805db7b701413a06f187
     profiles: ["edge"]
     restart: unless-stopped
     user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
@@ -138,7 +139,7 @@ services:
         condition: service_started
 
   vehicle-command:
-    image: tesla/vehicle-command:latest
+    image: tesla/vehicle-command:latest@sha256:e8adac679bf5e72790c588e620bb4a7992a8f80d4c3bd98da6d1129f59daf482
     profiles: ["edge"]
     restart: unless-stopped
     # The image's entrypoint is tesla-http-proxy; these are its flags only.
