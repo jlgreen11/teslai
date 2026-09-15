@@ -191,6 +191,12 @@ CATALOG: dict[str, ErrorInfo] = {
             "Nothing to do; this is a notice.",
         ),
         ErrorInfo(
+            "TSL-SESSION-SUMMARY",
+            "A drive or charge finished.",
+            "The car completed a drive or charge that passed the summary thresholds.",
+            "Nothing to do; this is a notice. Thresholds are in config/rules.yaml.",
+        ),
+        ErrorInfo(
             "TSL-VIN-REJECTED",
             "Telemetry arrived for a VIN that is not in the vehicles table.",
             "A car connected that this deployment does not own, or TESLA_VIN is wrong.",

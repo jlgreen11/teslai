@@ -20,7 +20,7 @@ from sqlalchemy import Engine, text
 
 from teslai.errors import CATALOG
 
-INFORMATIONAL_CODES = {"TSL-NEW-SOFTWARE"}
+INFORMATIONAL_CODES = {"TSL-NEW-SOFTWARE", "TSL-SESSION-SUMMARY"}
 PRICES = {"signal": 0.0001, "command": 0.001, "data": 0.002, "wake": 0.02}
 MONTHLY_CREDIT = 10.0
 
@@ -160,6 +160,12 @@ def run_once(engine: Engine, account_id: int, notify: Notifier, now: datetime | 
             homes = [p for p in repo.list_places(conn, account_id) if p.kind == "home"]
             for vid, last4, state, connected in vehicle_states(conn, account_id, now):
                 current += evaluate(vid, last4, state, connected, now, homes, rule_config)
+            if rule_config.summaries_enabled:
+                from teslai.costs import load_tariffs
+                from teslai.summaries import recently_finished, summary_conditions
+
+                current += summary_conditions(recently_finished(conn, account_id, now), rule_config,
+                                              tariffs=load_tariffs())
     fired, resolved = [], []
     with engine.begin() as conn:
         open_rows = conn.execute(text("SELECT id, rule, key, code, message FROM rule_firings "

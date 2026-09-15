@@ -42,6 +42,9 @@ class RuleConfig:
     tire_low_bar: float = 2.6
     tire_high_bar: float = 3.5
     software_enabled: bool = True
+    summaries_enabled: bool = True
+    summary_drive_min_miles: float = 1.0
+    summary_charge_min_kwh: float = 1.0
 
 
 def load_rule_config(path: Path | None = None) -> RuleConfig:
@@ -52,11 +55,15 @@ def load_rule_config(path: Path | None = None) -> RuleConfig:
     raw = yaml.safe_load(path.read_text()) or {}
     u, w = raw.get("unlocked_away") or {}, raw.get("windows_open") or {}
     t, s = raw.get("tire_pressure") or {}, raw.get("new_software") or {}
+    m = raw.get("session_summaries") or {}
     cfg = RuleConfig(
         unlocked_enabled=bool(u.get("enabled", True)), unlocked_minutes=int(u.get("minutes", 10)),
         windows_enabled=bool(w.get("enabled", True)), windows_minutes=int(w.get("minutes", 10)),
         tires_enabled=bool(t.get("enabled", True)), tire_low_bar=float(t.get("low_bar", 2.6)),
-        tire_high_bar=float(t.get("high_bar", 3.5)), software_enabled=bool(s.get("enabled", True)))
+        tire_high_bar=float(t.get("high_bar", 3.5)), software_enabled=bool(s.get("enabled", True)),
+        summaries_enabled=bool(m.get("enabled", True)),
+        summary_drive_min_miles=float(m.get("drive_min_miles", 1.0)),
+        summary_charge_min_kwh=float(m.get("charge_min_kwh", 1.0)))
     if cfg.tire_low_bar >= cfg.tire_high_bar:
         raise ValueError("tire_pressure.low_bar must be below high_bar")
     return cfg

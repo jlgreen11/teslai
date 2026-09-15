@@ -13,3 +13,7 @@ tire_pressure:
   high_bar: 3.5
 new_software:
   enabled: true          # notify once for each software version the car reports
+session_summaries:
+  enabled: true          # one notice per finished drive or charge from live telemetry
+  drive_min_miles: 1.0   # skip drives shorter than this
+  charge_min_kwh: 1.0    # skip charges that added less than this

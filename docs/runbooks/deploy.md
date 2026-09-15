@@ -125,6 +125,7 @@ Drive or wake the car, then open the day view. If nothing arrives within a few m
 | A window open while parked | 10 minutes |
 | Tire pressure outside limits | below 2.6 or above 3.5 bar |
 | New software version | once per version |
+| Drive and charge summaries | drives of 1+ mile and charges of 1+ kWh from live telemetry |
 
 Each alert fires once and sends a "Resolved" notice when it clears. Load your places first (`teslai places load config/places.csv`) so being at home does not trigger the unlocked alert.
 
