@@ -207,3 +207,25 @@ def read_rows(path: Path, tz_name: str | None) -> tuple[Iterator[ImportedRow], I
 def month_key(ts: datetime) -> str:
     return f"{ts:%Y-%m}"
 
+
+
+def to_events(rows, vehicle_id: int):
+    """Convert imported rows into builder inputs.
+
+    Every CSV row is a full snapshot, so each field becomes an event at the row's
+    timestamp; the reducer ignores repeats. Connectivity is emitted only when the
+    row's online/asleep state changes.
+    """
+    from teslai.builder import Connectivity
+    from teslai.reducer import Event
+
+    events: list[Event] = []
+    connectivity: list[Connectivity] = []
+    last_connected: bool | None = None
+    for r in rows:
+        if r.connected is not None and r.connected != last_connected:
+            connectivity.append(Connectivity(r.ts, r.connected))
+            last_connected = r.connected
+        for name, value in r.fields.items():
+            events.append(Event(vehicle_id, r.ts, name, value, "teslafi_import"))
+    return events, connectivity
