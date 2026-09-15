@@ -69,6 +69,7 @@ COLUMN_MAP: dict[str, tuple[str, object]] = {
     "battery_range": ("RatedRange", _float),
     "ideal_battery_range": ("IdealBatteryRange", _float),
     "est_battery_range": ("EstBatteryRange", _float),
+    "charge_energy_added": ("ChargeEnergyAdded", _float),
     "charger_power": ("ACChargingPower", _float),
     "charger_voltage": ("ChargerVoltage", _float),
     "charger_actual_current": ("ChargeAmps", _float),
@@ -227,5 +228,10 @@ def to_events(rows, vehicle_id: int):
             connectivity.append(Connectivity(r.ts, r.connected))
             last_connected = r.connected
         for name, value in r.fields.items():
+            if name == "ChargeEnergyAdded":
+                # TeslaFi reports kWh added in the current session. The builder reads
+                # per-session energy counters, split by AC and DC.
+                dc = r.fields.get("FastChargerPresent") is True
+                name = "DCChargingEnergyIn" if dc else "ACChargingEnergyIn"
             events.append(Event(vehicle_id, r.ts, name, value, "teslafi_import"))
     return events, connectivity

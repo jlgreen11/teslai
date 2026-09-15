@@ -34,3 +34,27 @@ def test_teslafi_csv_day_builds_expected_sessions(tmp_path):
     assert drive.start == datetime(2026, 7, 1, 13, 0, tzinfo=UTC)
     assert sessions[3].start_battery == 76 and sessions[3].end_battery == 90
     assert report.rows_imported == 8
+
+
+def test_charge_energy_added_becomes_ac_or_dc_counter(tmp_path):
+    header = HEADER + ["charge_energy_added", "fast_charger_present"]
+    rows = [
+        ["2026-07-01 08:00:00", "online", "P", "0", "1000.0", "40", "Disconnected", "39", "-94", "0", "0"],
+        ["2026-07-01 08:10:00", "online", "P", "0", "1000.0", "40", "Charging", "39", "-94", "0.0", "0"],
+        ["2026-07-01 09:10:00", "online", "P", "0", "1000.0", "60", "Charging", "39", "-94", "11.5", "0"],
+        ["2026-07-01 09:20:00", "online", "P", "0", "1000.0", "62", "Complete", "39", "-94", "12.25", "0"],
+        ["2026-07-01 12:00:00", "online", "P", "0", "1000.0", "30", "Charging", "39", "-94", "0.0", "1"],
+        ["2026-07-01 12:30:00", "online", "P", "0", "1000.0", "80", "Charging", "39", "-94", "38.0", "1"],
+        ["2026-07-01 12:31:00", "online", "P", "0", "1000.0", "80", "Complete", "39", "-94", "38.0", "1"],
+    ]
+    p = tmp_path / "t.csv"
+    with p.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(rows)
+    parsed, _ = read_rows(p, "UTC")
+    events, conn = to_events(list(parsed), vehicle_id=1)
+    assert {e.field for e in events if "EnergyIn" in e.field} == {"ACChargingEnergyIn", "DCChargingEnergyIn"}
+    sessions = build_sessions(events, conn, until=datetime(2026, 7, 1, 18, tzinfo=UTC))
+    charges = [s for s in sessions if s.kind == "charge"]
+    assert [(c.charger, c.energy_added_kwh) for c in charges] == [("ac", 12.25), ("dc", 38.0)]
