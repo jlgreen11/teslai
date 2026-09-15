@@ -1,68 +1,85 @@
 # teslai: Architecture Proposal (for review, nothing built yet)
 
-**Goal.** A self-hosted or free-to-host replacement for [TeslaFi](https://www.teslafi.com/): log every drive, charge, idle and sleep; report on it; alert on it; and bring the full TeslaFi history across without losing comparability.
+**Goal.** A product that replicates everything TeslaFi offers. The owner uses it first. It then opens to other Tesla owners as a hosted service, with the same code published for anyone to self-host.
 
-**Status.** Draft 2, 2026-09-14. Revised after a logged-in review of the owner's TeslaFi account. Awaiting owner review. No code until section 10 is answered.
+**Status.** Draft 3, 2026-09-14. No code until the remaining decisions in section 12 are answered.
 
-**What changed from draft 1.**
-- TeslaFi already runs this car on Tesla's official Fleet Telemetry, which confirms the ingestion design. Its exact field list is adopted below.
-- Vehicle controls are **disabled** in the account, with zero commands and zero wakes used. Commands, schedules and triggers move from v1 to an optional later phase.
-- Alerts, drive and charge summaries, charging-cost accounting with free-charging credits, and the battery report are what the account actually uses. Those become v1.
-- Migration is simpler than expected. TeslaFi offers the complete raw history as a single CSV, plus a JSON history API for drives and charges to reconcile against.
+## Decisions made
 
----
-
-## 1. Account review findings
-
-Scope of the review: every Settings, Drives, Charges, Parked, Calendar, Controls and API page, read from a logged-in browser session. Personal details such as places, addresses and vehicle identifiers are deliberately left out of this public document.
-
-| Area | What the account shows | Design consequence |
+| Decision | Choice | Date |
 |---|---|---|
-| Vehicles | One Model Y Long Range, current 2026.26 firmware, FSD in regular use | Single-vehicle design, multi-vehicle-ready schema. FSD-mile fields are available. |
-| History | 46 months of raw data, Dec 2022 to Sep 2026. About 3,100 drives, 12,400 idles and 8,500 sleeps. | Small data: tens of millions of rows at most. No time-series database needed. |
-| Connection | Fleet Telemetry with the TeslaFi Fleet Key installed. Sleep modes are unnecessary. Tesla logged connection timeouts to TeslaFi's server on 2026-09-07. | Same approach. The receiving endpoint must be always-on. |
-| Telemetry fields | 59 fields subscribed (listed in section 4) | Use the same field set, so live data matches history column-for-column. |
-| Controls | TeslaFi Controls set to Disabled. This month: 0 data calls, 0 commands, 0 wakes. 0 triggers. One climate preset and 3 stale schedules exist but cannot run. | Commands are not v1. |
-| Alerts in use | SMS: doors unlocked away from home, windows open, tire pressure low or high, logging offline. Email and Pushover: new software version. Email summaries for drives and charges. | Rules engine and notifications are v1. |
-| Charging | Home time-of-use price schedule. Gas-savings comparison configured. Hundreds of Supercharger sessions, all $0 on credit miles, with invoices auto-downloaded. Frequent free public charging. | Cost model must handle TOU, free locations, and Supercharger credits as well as paid kWh. |
-| Battery | Degradation report used, including the TeslaFi fleet-average comparison | Own-history trend in v1. The fleet average cannot be replicated. |
-| Places | About 60 labeled locations, auto-tag radius set, auto-label destinations enabled | Places must be migrated. TeslaFi has no export for them, so scrape the Locations page once. |
-| Preferences | Auto-end drive when offline, conditioning-loss display, home heatmap, idle maps, Sentry timer | Session-builder settings and a few v1 views. |
-| Cost today | TeslaFi Monthly Logging at $7.99/month | Replacement target: $0/month to Tesla plus about $10/year for a domain. |
-| Account security | TeslaFi two-factor authentication is not enabled | Worth enabling now, independent of this project. |
+| Scope | Full TeslaFi parity, including controls, automations and community features | 2026-09-14 |
+| Distribution | Hosted service first; open-source code others can self-host | 2026-09-14 |
+| Pricing | Free invite-only beta; per-car usage metering from day one; pricing decided later | 2026-09-14 |
+| Hosting | Oracle Cloud Always Free VM to start | 2026-09-14 |
+| TeslaFi history | Downloaded once the importer exists | 2026-09-14 |
+| Build vs. adopt | Build. Existing loggers are single-user tools, not products. | 2026-09-14 |
+| Alert channels | Support all TeslaFi channels through one library | 2026-09-14 |
+
+**Changes from draft 2.**
+- Commands, schedules, triggers and community features are back in scope.
+- The design is multi-tenant from the first migration, even while the owner is the only user.
+- The side-by-side run with TeslaFi is unlikely to work, so cutover is replaced with import-first validation.
+- New product-launch requirements are covered: naming, Tesla app registration, legal pages and licensing.
 
 ---
 
-## 2. How data is obtained from a Tesla in 2026
+## 1. Findings that shape the design
 
-| Path | State | Verdict |
+### 1.1 Owner's TeslaFi account (logged-in review, 2026-09-14)
+
+Personal details are deliberately left out of this public document.
+
+| Area | Finding | Consequence |
 |---|---|---|
-| Unofficial **Owner API** | Personal accounts reported getting `403 forbidden, see developer.tesla.com/docs/fleet-api` since June 2026 ([#5399](https://github.com/teslamate-org/teslamate/issues/5399)). | Do not use. |
-| Official **Fleet API** (REST) | Pay-per-use since 2025-01-01 with a $10/month credit per account. Commands need a virtual key and Tesla's signing proxy. | Setup, token refresh, Supercharger history, and later commands. |
-| Official **Fleet Telemetry** (car pushes to your server over mTLS) | The supported path, and what TeslaFi uses for this car. | Primary ingestion. |
+| Connection | TeslaFi streams this car through Fleet Telemetry with 59 fields | Adopt the same field set (section 5) |
+| History | 46 months of raw data, Dec 2022 to Sep 2026. About 3,100 drives, 12,400 idles and 8,500 sleeps. Full history is downloadable as one CSV. | Import is the first real test of the session builder |
+| Controls | Disabled today, zero commands used | Controls are built for parity, but later in the order |
+| Alerts in use | Unlocked away from home, windows open, tire pressure, logging offline, new software, drive and charge email summaries | Early phase |
+| Charging | Home time-of-use rates, free public charging, Supercharger sessions on credit miles, gas-savings baseline | Cost model must handle all of these |
+| Places | About 60 labeled locations, with no export | One-time scrape during migration |
+| TeslaFi price | $7.99/month | Reference point for future pricing |
 
-Fleet API prices ([summary](https://teslemetry.com/blog/tesla-fleet-api-pay-per-use)):
+### 1.2 Tesla platform constraints
 
-| Unit | Price |
-|---|---|
-| Streaming signal | $0.0001 |
-| Command | $0.001 |
-| `vehicle_data` request | $0.002 |
-| Wake | $0.02 |
+| Constraint | Detail | Source |
+|---|---|---|
+| Owner API | Personal accounts getting 403 since June 2026. Not usable. | [TeslaMate #5399](https://github.com/teslamate-org/teslamate/issues/5399) |
+| Fleet API pricing | Signal $0.0001, command $0.001, data request $0.002, wake $0.02. $10/month credit. | [Teslemetry](https://teslemetry.com/blog/tesla-fleet-api-pay-per-use), [Tesla billing](https://developer.tesla.com/docs/fleet-api/billing-and-limits) |
+| Tesla's cost example | About $0.36/day per car for about an hour of driving or charging daily | [Not a Tesla App](https://www.notateslaapp.com/news/2415/tesla-announces-api-pricing-third-party-service-costs-expected-to-rise) |
+| Public app registration | Requires legal business details, app name, description and purpose. Name must be unique. Registration is repeated per region. Request only the scopes the app needs. Selling personal data is prohibited. | [Tesla: What is Fleet API](https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api), [Tesla third-party apps](https://www.tesla.com/support/access-third-party-apps) |
+| Telemetry configs per car | Up to 3, but a second app configuring telemetry on a car already streaming to another app returns `config: null`. Tesla's bug is open and marked high priority. | [fleet-telemetry #294](https://github.com/teslamotors/fleet-telemetry/issues/294) |
+| Trademarks | Tesla's guidelines prohibit using Tesla trademarks as part of a product or service name, or implying endorsement | [Tesla legal resources](https://www.tesla.com/legal/additional-resources) |
 
-**Design rule: never wake the car to log.** Streaming happens only while the car is awake, so sleep shows up as silence. An `api_usage` table counts signals and requests per day and projects the monthly bill against the $10 credit.
+### 1.3 Hosting constraint
+
+Oracle halved the Always Free Ampere allowance on 2026-06-15, without announcement, to **2 cores and 12 GB of RAM**, plus 200 GB block storage. Idle free instances can be reclaimed. ([InfoQ](https://www.infoq.com/news/2026/07/oracle-cloud-free-tier-limits/), [Oracle docs](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)) That is enough for the owner plus a small beta. Oracle can change terms silently, so the whole stack must be portable to a paid host in under an hour.
 
 ---
 
-## 3. Build vs. adopt
+## 2. Unit economics: the risk to watch
 
-| Project | Stack | Tesla source | TeslaFi import |
-|---|---|---|---|
-| [TeslaMate](https://github.com/teslamate-org/teslamate) | Elixir, Postgres, Grafana | Owner API first | Yes, beta |
-| [TeslaLogger](https://github.com/bassmaster187/TeslaLogger) | C#/.NET, MariaDB, PHP | Fleet API + self-hosted telemetry | Yes |
-| [teslog-web](https://github.com/steveneppler/teslog-web) | Laravel, SQLite, MQTT | Self-hosted telemetry | Yes |
+For others, the hosted service pays Tesla for every car. Tesla's example of about $0.36/day works out to roughly $11/month per car. That is above TeslaFi's $7.99 price, and the $10 credit applies once per developer account, not per car.
 
-**Recommendation: build, reusing Tesla's two open-source servers for the hard plumbing.** The account review strengthens this. The features actually used are alerts, summaries, cost accounting with credits, and battery trend. The existing projects are weakest exactly there, while their strength, vehicle control, is unused. TeslaLogger remains the fallback if build effort becomes the constraint.
+Mitigations, built in from day one:
+- **Metering.** Count signals, commands and wakes per car per day in `api_usage`. An admin page shows cost per car and the monthly projection.
+- **Interval tuning.** Per-field minimum intervals and deltas; fast updates only while driving or charging. The real per-car cost is measured on the owner's car before any beta invite.
+- **Never wake to log.** Wakes are the most expensive unit and are only used for user-initiated commands.
+- **Beta cap.** The invite count is limited by measured cost and the free server's capacity.
+
+---
+
+## 3. Deployment modes
+
+One codebase and one set of containers, with a mode switch.
+
+| | Hosted service | Self-hosted |
+|---|---|---|
+| Who registers the Tesla app | The service, once, under the product's legal entity | Each self-hoster, with their own developer account and domain |
+| Onboarding | Sign up, log in with Tesla, scan a QR code to install the virtual key | Setup wizard walks through developer registration, keys, domain and pairing |
+| Tesla API costs | Paid by the service; metered per car | Paid by the self-hoster, usually inside the $10 credit |
+| Community features | Available, opt-in per user | Off by default. Could later send opt-in anonymized contributions to the hosted service. |
+| Users | Many accounts, invite-gated | Typically one household |
 
 ---
 
@@ -70,140 +87,185 @@ Fleet API prices ([summary](https://teslemetry.com/blog/tesla-fleet-api-pay-per-
 
 ```mermaid
 flowchart LR
-  car[Model Y] -- "mTLS WebSocket" --> ft[fleet-telemetry<br/>Tesla Go binary]
+  cars[Many users' cars] -- "mTLS WebSocket" --> ft[fleet-telemetry<br/>one server, routes by VIN]
   ft -- MQTT --> mq[(Mosquitto)]
   mq --> ing[ingest worker]
-  ing --> raw[(raw_states)]
+  ing --> raw[(raw_states<br/>per vehicle)]
   raw --> sb[session builder]
   sb --> sess[(drives / charges /<br/>idles / sleeps)]
-  csv[TeslaFi full-history CSV] --> imp[TeslaFi importer] --> raw
-  hist[TeslaFi history API<br/>drives + charges JSON] --> rec[reconciliation report]
-  sess --> rec
+  csv[TeslaFi CSV import] --> raw
   sess --> api[API server]
-  api --> web[Web UI / PWA]
-  sess --> rules[rules engine]
+  api --> web[Web app / PWA]
+  sess --> rules[rules engine:<br/>alerts, schedules, triggers]
   raw --> rules
-  rules --> notify[Apprise: email, SMS gateway,<br/>Pushover, Telegram, ntfy]
-  fleet[Tesla Fleet API] --> api
-  api -. "later phase" .-> vcp[vehicle-command proxy]
+  rules --> notify[Apprise channels + web push]
+  rules --> vcp[vehicle-command proxy]
+  api --> vcp
+  vcp -- "signed commands" --> fleet[Tesla Fleet API]
+  sess --> agg[community aggregates<br/>hosted mode, opt-in]
+  agg --> api
+  api --> meter[(api_usage metering)]
 ```
 
 | Component | Choice | Why |
 |---|---|---|
-| Telemetry receiver | [`teslamotors/fleet-telemetry`](https://github.com/teslamotors/fleet-telemetry), unmodified | Tesla-maintained. Handles mTLS and decoding. |
-| Message bus | Mosquitto (built-in MQTT dispatcher) | Buffers across app restarts. Home Assistant integration for free. |
-| Backend | Python 3.12, FastAPI, SQLAlchemy; one `worker` process for ingest, sessions and rules | Owner's working language. pandas or polars for import and reconciliation. |
-| Database | PostgreSQL 16 + PostGIS | Concurrent ingest and reads, real geofence polygons, spatial queries. |
-| Frontend | React + Vite + TypeScript, MapLibre GL, ECharts, installable PWA | Mobile-first. Web push as a free alert channel. |
-| Notifications | [Apprise](https://github.com/caronc/apprise) | Covers email, Pushover, Telegram, Discord, ntfy and email-to-SMS gateways in one library. |
-| Reverse proxy | Caddy | Automatic certificates for the web UI and Tesla's public-key URL. |
-| Command signing | [`teslamotors/vehicle-command`](https://github.com/teslamotors/vehicle-command) proxy | Later phase only, because controls are unused today. |
-| Packaging | One `docker compose` file | Same deployment on a cloud VM or the Mac Mini. |
-
-**Telemetry field set.** Adopt TeslaFi's subscription for this car: ACChargingEnergyIn, ACChargingPower, BatteryHeaterOn, BatteryLevel, CabinOverheatProtectionMode, ChargeAmps, ChargeCurrentRequest, ChargeLimitSoc, ChargePort, ChargePortColdWeatherMode, ChargeRateMilePerHour, ChargerPhases, ChargerVoltage, ChargingCableType, DCChargingEnergyIn, DCChargingPower, DefrostMode, DestinationName, DetailedChargeState, DoorState, EnergyRemaining, EstBatteryRange, EuropeVehicle, FastChargerPresent, FastChargerType, FdWindow, FpWindow, Gear, HvacFanStatus, HvacLeftTemperatureRequest, HvacPower, IdealBatteryRange, InsideTemp, LifetimeEnergyUsed, Location, Locked, MilesSinceReset, MinutesToArrival, Odometer, OutsideTemp, PackCurrent, PackVoltage, RatedRange, RdWindow, RightHandDrive, RouteLine, RpWindow, ScheduledChargingStartTime, SelfDrivingMilesSinceReset, SentryMode, SoftwareUpdateVersion, TpmsPressureFl, TpmsPressureFr, TpmsPressureRl, TpmsPressureRr, VehicleName, VehicleSpeed, Version, WheelType. Per-field minimum intervals get tuned against the $10 credit.
+| Telemetry receiver | [`teslamotors/fleet-telemetry`](https://github.com/teslamotors/fleet-telemetry) | Tesla-maintained and built for fleets, so one instance serves every user's car. |
+| Command signing | [`teslamotors/vehicle-command`](https://github.com/teslamotors/vehicle-command) HTTP proxy | Required for commands. Holds the app's private key. |
+| Message bus | Mosquitto (built-in dispatcher) | Buffers across restarts. Enough for beta scale. NATS or Kafka become options if volume demands. |
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Alembic; separate `worker` process for ingest, sessions, rules and scheduled jobs | Owner's working language. Strong data tooling for import, reconciliation and reports. |
+| Database | PostgreSQL 16 + PostGIS, with row-level security per account | Tenant isolation enforced by the database, not just app code. Real geofences and spatial queries. |
+| Frontend | React + Vite + TypeScript, MapLibre GL, ECharts, installable PWA | Mobile-first, with web push. |
+| Notifications | [Apprise](https://github.com/caronc/apprise) + web push | Email, Pushover, Telegram, Discord, ntfy and SMS gateways in one library. |
+| Email | A transactional email provider's free tier | Summaries, alerts and account email. The provider is chosen at build time. |
+| Reverse proxy | Caddy | Automatic certificates, plus serving Tesla's public-key URL. |
+| Packaging | `docker compose`, one file for both modes | Same artifact for Oracle, a paid host, or a self-hoster's box. |
 
 ---
 
 ## 5. Data model
 
-**One pipeline for history and live data.** TeslaFi CSV rows and live telemetry both become `raw_states` rows. One session builder derives drives, charges, idles and sleeps from both. Numbers from 2022 and 2026 are therefore computed identically.
+**Tenancy from the first migration.** `accounts` → `users` (members, roles) → `vehicles`. Every row carries `account_id`. Postgres row-level security policies enforce isolation, and the API sets the current account per request.
+
+**One pipeline for history and live data.** TeslaFi CSV rows and live telemetry both land in `raw_states`. One session builder derives every session, so imported and live numbers are computed identically.
 
 **Core tables**
-- `vehicles` — VIN, name, model, trim, hardware.
-- `raw_states` — `(vehicle_id, ts)` key; typed nullable columns for the fields above; `source` = `telemetry | teslafi_import | manual`. Partitioned by month.
-- `drives`, `charges`, `idles`, `sleeps` — derived sessions with cached aggregates and `builder_version`.
-- `places` — PostGIS polygon or radius, name, icon, tariff, `free_charging` flag.
-- `tariffs` — flat or time-of-use schedules with effective dates.
-- `supercharger_sessions` — from Fleet API charging history: kWh, fee, currency, credit applied. Matched to `charges`.
-- `gas_baseline` — fuel price and MPG with effective dates, for the gas-savings comparison.
-- `rules`, `rule_firings`, `notification_channels`, `api_usage`, `share_links`, `service_records`.
+- `accounts`, `users`, `memberships`, `invites`, `sessions`, `audit_log`.
+- `tesla_connections` — encrypted OAuth tokens, scopes, region, virtual key status, telemetry config status.
+- `vehicles` — VIN, name, model, trim, hardware, firmware history.
+- `raw_states` — `(vehicle_id, ts)` key, typed nullable columns for the telemetry fields, `source`. Partitioned by month.
+- `drives`, `charges`, `idles`, `sleeps` — derived sessions with cached aggregates and `builder_version`; `hidden` and `manual` flags.
+- `places` — PostGIS geometry, name, icon, tariff, `free_charging`; `auto_tag_rules`.
+- `tariffs`, `gas_baselines`, `supercharger_sessions` — invoices, fees, credits, currency.
+- `rules` (alerts), `schedules`, `triggers`, `climate_presets`, `rule_firings`, `commands_log`.
+- `notification_channels`, `email_summaries`.
+- `service_reminders`, `service_log`, `attachments`.
+- `trips`, `share_links`, `location_shares`.
+- `api_tokens` — the user-facing JSON API.
+- `api_usage` — per-vehicle daily signal, command, wake and data-request counts, with estimated cost.
+- `community_*` — opt-in aggregates: firmware rollouts, leaderboards, fleet statistics, battery degradation by model and odometer band.
 
-**Session builder.** A deterministic state machine over ordered `raw_states`:
-- A drive starts when gear leaves P, or speed exceeds 0 where gear is missing. It ends after P plus a dwell threshold, or after N minutes offline, matching TeslaFi's "auto-end drive when offline" setting.
+**Telemetry field set**, adopted from TeslaFi's subscription: ACChargingEnergyIn, ACChargingPower, BatteryHeaterOn, BatteryLevel, CabinOverheatProtectionMode, ChargeAmps, ChargeCurrentRequest, ChargeLimitSoc, ChargePort, ChargePortColdWeatherMode, ChargeRateMilePerHour, ChargerPhases, ChargerVoltage, ChargingCableType, DCChargingEnergyIn, DCChargingPower, DefrostMode, DestinationName, DetailedChargeState, DoorState, EnergyRemaining, EstBatteryRange, EuropeVehicle, FastChargerPresent, FastChargerType, FdWindow, FpWindow, Gear, HvacFanStatus, HvacLeftTemperatureRequest, HvacPower, IdealBatteryRange, InsideTemp, LifetimeEnergyUsed, Location, Locked, MilesSinceReset, MinutesToArrival, Odometer, OutsideTemp, PackCurrent, PackVoltage, RatedRange, RdWindow, RightHandDrive, RouteLine, RpWindow, ScheduledChargingStartTime, SelfDrivingMilesSinceReset, SentryMode, SoftwareUpdateVersion, TpmsPressureFl, TpmsPressureFr, TpmsPressureRl, TpmsPressureRr, VehicleName, VehicleSpeed, Version, WheelType.
+
+**Session builder.** A deterministic, idempotent state machine:
+- A drive starts when gear leaves P, or speed exceeds 0 where gear is missing. It ends after P plus a dwell time, or after N minutes offline.
 - A charge follows charging state and cable presence.
 - Sleep is a telemetry gap beyond a threshold. Idle is the remainder, with conditioning loss attributed from HVAC state.
-- Rebuilds are idempotent. Changing thresholds bumps `builder_version` and re-derives everything.
+- Thresholds are per-account settings. Changing them bumps `builder_version` and re-derives.
+
+**Community data rules.** Opt-in per user. Only aggregates are published, and no statistic is shown for groups smaller than a minimum count. Leaderboards use display names chosen by the user.
 
 ---
 
-## 6. TeslaFi migration
+## 6. Full TeslaFi parity map
 
-1. **Raw history.** Download "everything at once" from TeslaFi's Advanced settings: one CSV of the full logging history. Per-month CSVs are the fallback if the single file times out.
-2. **Answer key.** Pull drives and charges as JSON from TeslaFi's history API, month by month using `dateFrom` and `dateTo`. This needs a TeslaFi API token generated in Settings. The token is stored in a git-ignored `.env`.
-3. **Places, tariffs and gas baseline.** No export exists. Scrape the Locations, Home Charging and Gas Savings pages once from a logged-in session, then review the result by hand.
-4. **Import.** Map CSV columns into `raw_states`. Convert TeslaFi's home-timezone timestamps to UTC. Treat `None` strings as null and 0/1 as booleans. TeslaMate's [importer](https://docs.teslamate.org/docs/import/teslafi/) documents the edge cases.
-5. **Reconcile.** For each month, compare derived sessions against the answer key: drive count, miles, kWh used, charge count, kWh added, cost. Acceptance means totals within 1%, with every unmatched session listed. This is the migration's pass/fail test.
-6. **Cut over.** Run both in parallel for at least two weeks and reconcile the overlap, then cancel TeslaFi. It must be verified during setup whether the car can stream to TeslaFi's and teslai's telemetry servers at the same time. If not, cut over directly, with the full-history CSV as the backstop.
+Built from TeslaFi's complete menu as seen in the owner's account. Phases are defined in section 8.
 
----
-
-## 7. Feature plan, grounded in actual use
-
-| Feature | Phase | Evidence from account |
+| TeslaFi area | Features | Phase |
 |---|---|---|
-| Drive, charge, idle and sleep logs with maps | v1 | Core use |
-| Full TeslaFi import with reconciliation report | v1 | 46 months of history |
-| Places with auto-tagging; unlabeled-location list | v1 | About 60 labeled places |
-| Charging cost: TOU, free locations, Supercharger credits, gas savings | v1 | All configured |
-| Alerts: unlocked away from home, windows open, tire pressure, logging offline, new software | v1 | All enabled |
-| Drive and charge email summaries | v1 | Enabled |
-| Day, week, month and year calendar views and totals | v1 | Home screen is the day view |
-| Battery degradation trend | v1 | Report in use |
-| Temperature and speed efficiency, tire pressure graph, odometer graph | v1 | Cheap once sessions exist |
-| CSV export and JSON API | v1 | Keeps the data portable |
-| FSD miles per drive and lifetime share | v1 | Shown in the account header |
-| Lifetime map, driveprint, road trips, share links | v2 | Nice to have |
-| Service reminders and log | v2 | Page exists but empty |
-| Home Assistant via MQTT | v2 | Nearly free |
-| Commands, schedules, triggers, climate presets | Later, optional | Controls disabled; 0 commands used |
-| Auto-label destinations from nav | Later | TeslaFi uses Mapbox and Grok; Nominatim plus `DestinationName` is the free version |
-| Alexa, software tracker, leaderboards, fleet statistics, fleet battery average | Out | Unused, or needs a user base |
+| **Logging core** | Drive, charge, idle and sleep logs; day view with battery chart and map; compact and filtered views | 1 |
+| **Import** | TeslaFi full-history CSV import, reconciliation report, places, tariffs and gas-baseline migration | 1 |
+| **Drives** | Drive summary, temperature efficiency, speed efficiency, search and CSV download, add or edit drive, hidden drives, odometer graph, FSD miles | 2 |
+| **Places** | Labeled locations, label a location, unlabeled locations, auto-tag drives | 2 |
+| **Charges** | Charge summary by location, search and CSV download, add charge, home TOU pricing, free locations, gas savings | 2 |
+| **Battery** | Degradation report with trendline and custom starting range | 2 |
+| **Parked** | Idle and sleep search and download, vampire drain, conditioning loss, Sentry time | 2 |
+| **Calendar** | Year and month views with totals | 2 |
+| **Tires** | Tire pressure graph and history | 2 |
+| **Alerts** | Unlocked, windows, tire pressure, drive started, charge complete, logging offline, new software, Sentry events, plug-in and charge-limit reminders | 2 |
+| **Channels** | Email, SMS via gateway or paid provider, Pushover, Telegram, Discord, ntfy, web push; email summaries | 2 |
+| **Supercharging** | Invoice download from Fleet API charging history, matching to charges, credits and idle fees | 3 |
+| **Controls** | Live controls: lock, climate, defrost, seat and wheel heat, charge start, stop, limit and amps, Sentry, valet, flash, honk | 3 |
+| **Automation** | Schedules with do-not-wake option, triggers on arrival, climate presets, auto-Sentry | 3 |
+| **API** | Personal API tokens, last-data JSON, drives and charges history JSON, commands with per-command enablement and wake option | 3 |
+| **Accounts** | Multi-user signup, invites, Tesla OAuth onboarding, QR virtual-key install, two-factor or passkeys, login alerts, data export, account deletion | 4 |
+| **Self-host** | Setup wizard, self-host documentation, upgrade path | 4 |
+| **Maps and sharing** | Lifetime map, driveprint cell coverage, road trips, shared drives and trips, time-limited location sharing | 5 |
+| **Service** | Service reminders by date or odometer, service log with cost and photos, image uploads | 5 |
+| **Community** (hosted) | Software tracker, your software updates, latest software comparison, leaderboards, statistics map, Supercharger statistics, fleet battery-degradation average | 6 |
+| **Integrations** | Home Assistant via MQTT, Alexa skill, Tesla orders status, auto-label destinations from navigation | 7 |
+| **Business** | Pricing, payments, referral credits, public launch | After beta |
 
-**SMS.** TeslaFi includes 250 SMS a month. Free alternatives are Pushover (one-time app purchase), Telegram, ntfy, or an email-to-SMS carrier gateway. Paid SMS such as Twilio is possible but not the default.
-
----
-
-## 8. Hosting
-
-Hard requirement: the car must reach a public hostname with **end-to-end mTLS**. TLS-terminating tunnels such as Cloudflare Tunnel cannot sit in front of the telemetry server. The 2026-09-07 connection timeouts to TeslaFi show that an unreachable endpoint means lost or delayed data.
-
-| Option | Cost | Pros | Cons |
-|---|---|---|---|
-| **A. Oracle Cloud Always Free ARM VM + domain** (recommended) | About $10/yr | Static public IP, always on, 4 cores and 24 GB RAM free | Oracle can reclaim idle free instances. Needs off-box backups. |
-| B. Mac Mini at home with a router port-forward | $0 + domain | Data stays home, existing hardware | Home outages mean gaps. Was unreachable over SSH during review. |
-| C. Mac Mini behind Tailscale Funnel raw TCP | $0 | No router changes | `*.ts.net` hostname may not be accepted by Tesla. Experimental. |
-| D. Free PaaS such as Fly, Render or Railway | — | — | Sleeping containers, no stable mTLS TCP, ephemeral disks. Not suitable. |
-
-**Backups.** Nightly `pg_dump` to Cloudflare R2 or Backblaze B2 free tier, plus a copy to the Mac Mini. Monthly restore test.
+Sleep Modes is intentionally not replicated: with Fleet Telemetry the car sleeps on its own, and TeslaFi's own account page says so.
 
 ---
 
-## 9. Security
+## 7. TeslaFi migration and cutover
 
-- Single-owner app with passkey or TOTP login. Registration closes after first run.
-- Tesla tokens encrypted at rest. The signing key, when commands are added, stays inside the proxy container.
-- Share links are time-limited and revocable.
-- The repo is public. Secrets, TeslaFi credentials and tokens, TeslaFi exports, and scraped places live only in git-ignored paths.
+1. **Build the importer before touching the car.** Download the full-history CSV. Pull the drives and charges answer key from TeslaFi's history API with a TeslaFi API token. Scrape places, tariffs and gas baseline once. All of it goes in git-ignored paths.
+2. **Reconcile.** Derived sessions must match TeslaFi per month within 1% on drive count, miles, kWh used, charge count, kWh added and cost. Every mismatch gets listed. This is the pass/fail gate.
+3. **Try parallel streaming, expect it to fail.** Tesla's open bug suggests a second app cannot configure telemetry on a car already streaming to TeslaFi. A single attempt costs nothing.
+4. **Direct cutover.** Remove TeslaFi's telemetry config, then configure teslai's. Keep TeslaFi subscribed one more month so its history and exports stay reachable. Re-import the final days from TeslaFi to close the gap.
 
 ---
 
-## 10. Decisions needed before building
+## 8. Build phases
 
-1. **Build vs. adopt.** Build as proposed, or adopt TeslaLogger and add only what's missing?
-2. **Hosting.** Oracle free VM, Mac Mini with port-forward, or Mac Mini with Funnel?
-3. **Domain.** Which domain or subdomain will the car stream to?
-4. **Stack.** Python + React + Postgres as proposed, or a different preference?
-5. **v1 scope.** Is section 7's v1 list right, with commands deferred?
-6. **Alert channel.** Which replaces TeslaFi SMS: Pushover, Telegram, ntfy, email-to-SMS, or paid SMS?
-7. **Migration timing.** Generate the TeslaFi API token and download the full CSV now, or wait until the importer exists? Downloading now protects the history if the subscription lapses.
+| Phase | Outcome | Needs the owner |
+|---|---|---|
+| 0. Foundations | Repo scaffold, compose stack, schema with tenancy and RLS, CI, `.env` handling | No |
+| 1. Import and core | TeslaFi importer, session builder, reconciliation report passing on 46 months of history, day view | Download CSV, generate TeslaFi API token |
+| 2. Live personal use | Oracle VM, domain, Tesla developer app, telemetry live on the owner's car, analytics, alerts | Oracle and Tesla accounts, domain purchase, QR scan in Tesla app |
+| 3. Controls and automation | Commands, schedules, triggers, presets, Supercharger invoices, personal API | No |
+| 4. Multi-user beta | Signup, invites, onboarding, metering dashboard, legal pages, self-host wizard | Product name, legal entity, license choice |
+| 5–7. Parity completion | Maps and sharing, service log, community features, integrations | No |
+
+Cutover from TeslaFi happens at the end of phase 2, once the reconciliation report passes.
+
+---
+
+## 9. Hosting and operations
+
+| Stage | Host | Notes |
+|---|---|---|
+| Owner plus small beta | Oracle Always Free, 2 cores and 12 GB, plus about $10/yr domain | Continuous telemetry traffic keeps the instance from looking idle |
+| Growing beta | Paid VM or managed Postgres | Trigger: sustained CPU or memory above 70%, or any Oracle reclaim warning |
+
+- **Reachability.** The car needs end-to-end mTLS on a public hostname. TLS-terminating tunnels cannot sit in front of the telemetry server.
+- **Backups.** Nightly encrypted `pg_dump` to Cloudflare R2 or Backblaze B2 free tier. Monthly restore test. Other people's data raises the bar.
+- **Portability.** A documented restore-to-new-host runbook, tested before the first beta invite.
+- **Monitoring.** Uptime check on the telemetry port and web app, alert on ingest silence across all cars, per-car cost projection.
+
+---
+
+## 10. Security and privacy
+
+- Row-level security on every tenant table, with tests that try cross-account reads.
+- Tesla tokens encrypted at rest with envelope encryption. The command-signing key lives only in the proxy container.
+- Passkeys or TOTP, login alerts, and rate limiting on auth and commands.
+- Minimal Tesla scopes, requested per feature, as Tesla's terms require.
+- User data export and full account deletion, including raw location history.
+- No selling or sharing of personal data. Community aggregates are opt-in and thresholded.
+- Privacy policy and terms of service before the first non-owner user.
+- The repo is public. Secrets, exports, scraped personal data and `.env` files are git-ignored.
+
+---
+
+## 11. Open-source licensing
+
+| License | Effect |
+|---|---|
+| **AGPLv3** (recommended) | Anyone who runs a modified hosted copy must publish their changes. This protects a hosted service from closed forks. TeslaMate uses it. |
+| MIT | Maximum adoption, including closed commercial forks. |
+
+---
+
+## 12. Remaining decisions
+
+1. **Product name.** Public name without "Tesla" in it, per Tesla's trademark guidelines. The repo can keep its name until launch.
+2. **Legal entity.** Tesla's public app registration asks for legal business details. Options: an existing company, a new LLC, or registering as an individual if Tesla allows it.
+3. **License.** AGPLv3 or MIT.
+4. **Domain.** Chosen after the name.
+5. **Stack.** Confirm Python + React + Postgres.
+
+The owner-only work in phases 0 and 1 does not depend on these, except the stack.
 
 ## Sources
 
 - [TeslaFi](https://www.teslafi.com/), plus the owner's logged-in account pages
-- [Tesla Fleet API](https://developer.tesla.com/docs/fleet-api), [billing and limits](https://developer.tesla.com/docs/fleet-api/billing-and-limits), [announcements](https://developer.tesla.com/docs/fleet-api/announcements), [telemetry fields](https://developer.tesla.com/docs/fleet-api/fleet-telemetry/available-data)
-- [Teslemetry pricing summary](https://teslemetry.com/blog/tesla-fleet-api-pay-per-use)
-- [teslamotors/fleet-telemetry](https://github.com/teslamotors/fleet-telemetry)
+- [Tesla Fleet API](https://developer.tesla.com/docs/fleet-api), [What is Fleet API](https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api), [billing and limits](https://developer.tesla.com/docs/fleet-api/billing-and-limits), [announcements](https://developer.tesla.com/docs/fleet-api/announcements), [telemetry fields](https://developer.tesla.com/docs/fleet-api/fleet-telemetry/available-data), [FAQ](https://developer.tesla.com/docs/fleet-api/support/faq)
+- [Tesla: Managing access with third-party apps](https://www.tesla.com/support/access-third-party-apps), [Tesla legal resources](https://www.tesla.com/legal/additional-resources)
+- [Teslemetry pricing summary](https://teslemetry.com/blog/tesla-fleet-api-pay-per-use), [Not a Tesla App on API pricing](https://www.notateslaapp.com/news/2415/tesla-announces-api-pricing-third-party-service-costs-expected-to-rise)
+- [teslamotors/fleet-telemetry](https://github.com/teslamotors/fleet-telemetry), [issue #294](https://github.com/teslamotors/fleet-telemetry/issues/294)
 - [TeslaMate API docs](https://docs.teslamate.org/docs/configuration/api/), [TeslaFi import](https://docs.teslamate.org/docs/import/teslafi/), [issue #5399](https://github.com/teslamate-org/teslamate/issues/5399)
-- [TeslaLogger](https://github.com/bassmaster187/TeslaLogger), [self-hosted telemetry guide](https://blog.enumc.com/setting-up-teslalogger-with-a-self-hosted-telemetry-server/)
-- [teslog-web](https://github.com/steveneppler/teslog-web)
-- [Tailscale Funnel](https://tailscale.com/docs/reference/tailscale-cli/funnel)
+- [TeslaLogger](https://github.com/bassmaster187/TeslaLogger), [teslog-web](https://github.com/steveneppler/teslog-web)
+- [Oracle Always Free resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm), [InfoQ on the June 2026 cut](https://www.infoq.com/news/2026/07/oracle-cloud-free-tier-limits/)
