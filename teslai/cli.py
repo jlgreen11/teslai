@@ -285,7 +285,7 @@ def import_teslafi_cmd(
     paths: list[Path] = typer.Argument(..., help="TeslaFi CSV files or directories."),
     tz: str = typer.Option(None, "--tz", help="TeslaFi home timezone (IANA), required."),
     vin: str = typer.Option("", help="VIN to store sessions under (with --write)."),
-    write: bool = typer.Option(False, help="Store sessions in the database. Default is a dry run."),
+    write: bool = typer.Option(False, help="Store sessions and samples. Default is a dry run."),
 ) -> None:
     """Import TeslaFi history through the session builder."""
     from teslai.builder import BuilderParams
@@ -293,35 +293,50 @@ def import_teslafi_cmd(
 
     zone = _require_tz(tz)
     params = BuilderParams()
-    result = import_teslafi(paths, tz, params=params)
-    _print_import(result, zone)
     if not write:
+        result = import_teslafi(paths, tz, params=params)
+        _print_import(result, zone)
         typer.echo("\nDry run: nothing stored. Re-run with --write --vin <VIN> to store.")
         return
-    if not vin or result.first_ts is None:
-        typer.echo("--write needs --vin and at least one imported row.", err=True)
+    if not vin:
+        typer.echo("--write needs --vin.", err=True)
         raise typer.Exit(2)
     from datetime import timedelta
 
     from sqlalchemy import create_engine, text
 
     from teslai.db import repo
+    from teslai.samples import enrich_sessions, sample_from_fields, upsert_samples
     from teslai.settings import Settings
 
-    engine = create_engine(Settings().database_url)
+    s = Settings()
+    engine = create_engine(s.database_url)
     with engine.begin() as conn:
-        found = conn.execute(text("SELECT id, account_id FROM vehicles WHERE vin = :v"),
-                             {"v": vin}).first()
+        found = conn.execute(text("SELECT id, account_id FROM vehicles WHERE vin = :v"), {"v": vin}).first()
         if found is None:
-            account_id = repo.create_account(conn, "owner")
+            ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
+            account_id = ids[0] if len(ids) == 1 else repo.create_account(conn, "owner")
             vehicle_id = repo.create_vehicle(conn, account_id, vin, timezone=tz)
         else:
             vehicle_id, account_id = found
-        n = repo.replace_sessions(conn, account_id, vehicle_id, result.first_ts,
-                                  result.last_ts + timedelta(seconds=1), result.sessions,
+
+    def store_rows(rows) -> None:
+        with engine.begin() as conn:
+            upsert_samples(conn, account_id, vehicle_id,
+                           (sample_from_fields(r.ts, r.fields) for r in rows), "teslafi_import")
+
+    result = import_teslafi(paths, tz, params=params, on_rows=store_rows)
+    _print_import(result, zone)
+    if result.first_ts is None:
+        typer.echo("No rows imported.", err=True)
+        raise typer.Exit(1)
+    end = result.last_ts + timedelta(seconds=1)
+    with engine.begin() as conn:
+        n = repo.replace_sessions(conn, account_id, vehicle_id, result.first_ts, end, result.sessions,
                                   "teslafi_import", params.version,
                                   places=repo.list_places(conn, account_id))
-    typer.echo(f"\nStored {n} sessions for VIN ending {vin[-4:]}.")
+        enrich_sessions(conn, account_id, vehicle_id, result.first_ts, end, s.teslai_pack_kwh)
+    typer.echo(f"\nStored {n} sessions and their samples for VIN ending {vin[-4:]}.")
 
 
 @gate_app.command("live")
@@ -563,6 +578,51 @@ def tesla_charging_history(days: int = typer.Option(90, help="How many days back
     except TeslaiError as err:
         _fail(err)
     typer.echo(f"Stored {result['stored']} Supercharger sessions; {result['matched']} matched to local charges.")
+
+
+demo_app = typer.Typer(help="Synthetic demo data.")
+app.add_typer(demo_app, name="demo")
+
+
+@demo_app.command("seed")
+def demo_seed(
+    days: int = typer.Option(180, help="Days of history to generate, ending yesterday."),
+    vin: str = typer.Option("DEMO0TESLAI000001", help="VIN for the demo car."),
+    name: str = typer.Option("Demo Model Y", help="Display name."),
+) -> None:
+    """Generate and store realistic synthetic history (no real data)."""
+    from datetime import timedelta
+
+    from sqlalchemy import create_engine, text
+
+    from teslai import demo
+    from teslai.builder import BuilderParams, SessionBuilder
+    from teslai.db import repo
+    from teslai.importer.teslafi import to_events
+    from teslai.samples import enrich_sessions, sample_from_fields, upsert_samples
+    from teslai.settings import Settings
+
+    s = Settings()
+    rows, places = demo.generate(days)
+    events, connectivity = to_events(rows, 0)
+    builder = SessionBuilder(params=BuilderParams())
+    builder.feed(events, connectivity)
+    sessions = builder.finalize(rows[-1].ts)
+    engine = create_engine(s.database_url)
+    with engine.begin() as conn:
+        ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
+        account_id = ids[0] if len(ids) == 1 else repo.create_account(conn, "owner")
+        vid = conn.execute(text("SELECT id FROM vehicles WHERE vin = :v"), {"v": vin}).scalar()
+        if vid is None:
+            vid = repo.create_vehicle(conn, account_id, vin, name, str(demo.TZ))
+        conn.execute(text("DELETE FROM samples WHERE vehicle_id = :v"), {"v": vid})
+        repo.upsert_places(conn, account_id, places)
+        upsert_samples(conn, account_id, vid, (sample_from_fields(r.ts, r.fields) for r in rows), "demo")
+        start, end = rows[0].ts - timedelta(days=1), rows[-1].ts + timedelta(days=1)
+        n = repo.replace_sessions(conn, account_id, vid, start, end, sessions, "teslafi_import",
+                                  BuilderParams().version, places=repo.list_places(conn, account_id))
+        enrich_sessions(conn, account_id, vid, start, end, demo.PACK_KWH)
+    typer.echo(f"Demo car {name}: {len(rows)} samples, {n} sessions over {days} days.")
 
 
 @app.command()

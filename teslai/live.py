@@ -21,6 +21,7 @@ from sqlalchemy import Engine, text
 
 from teslai.builder import BuilderParams, Connectivity, SessionBuilder
 from teslai.db import repo
+from teslai.samples import enrich_sessions, samples_from_events, upsert_samples
 
 WINDOW = timedelta(hours=48)
 WARMUP = timedelta(hours=1)
@@ -35,7 +36,8 @@ def _anchor(conn, account_id: int, vehicle_id: int, now: datetime, window: timed
 
 
 def rebuild_recent(engine: Engine, account_id: int, vehicle_id: int, now: datetime | None = None,
-                   window: timedelta = WINDOW, params: BuilderParams | None = None) -> int:
+                   window: timedelta = WINDOW, params: BuilderParams | None = None,
+                   pack_kwh: float = 75.0) -> int:
     """Rebuild a vehicle's recent sessions from telemetry. Returns sessions written."""
     now = now or datetime.now(UTC)
     params = params or BuilderParams()
@@ -52,9 +54,13 @@ def rebuild_recent(engine: Engine, account_id: int, vehicle_id: int, now: dateti
         builder = SessionBuilder(params=params)
         builder.feed(events, [Connectivity(r.ts, r.connected) for r in conn_rows])
         sessions = builder.finalize(now)
-        return repo.replace_sessions(conn, account_id, vehicle_id, anchor, now + timedelta(seconds=1),
-                                     sessions, "telemetry", params.version,
-                                     places=repo.list_places(conn, account_id))
+        upsert_samples(conn, account_id, vehicle_id,
+                       (x for x in samples_from_events(events) if x["ts"] >= anchor), "telemetry")
+        written = repo.replace_sessions(conn, account_id, vehicle_id, anchor, now + timedelta(seconds=1),
+                                        sessions, "telemetry", params.version,
+                                        places=repo.list_places(conn, account_id))
+        enrich_sessions(conn, account_id, vehicle_id, anchor, now + timedelta(seconds=1), pack_kwh)
+        return written
 
 
 def rebuild_all(engine: Engine, account_id: int, now: datetime | None = None) -> dict[int, int]:

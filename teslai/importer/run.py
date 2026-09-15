@@ -36,7 +36,8 @@ def _first_ts(path: Path, tz: str) -> datetime | None:
 
 
 def import_teslafi(paths: list[Path], tz: str, vehicle_id: int = 0,
-                   params: BuilderParams | None = None) -> ImportResult:
+                   params: BuilderParams | None = None, on_rows=None) -> ImportResult:
+    """on_rows(list[ImportedRow]) is called once per file, before building, e.g. to store samples."""
     files = expand_paths(paths)
     ordered = sorted(((ts, f) for f in files if (ts := _first_ts(f, tz)) is not None),
                      key=lambda x: x[0])
@@ -44,7 +45,10 @@ def import_teslafi(paths: list[Path], tz: str, vehicle_id: int = 0,
     result = ImportResult(sessions=[])
     for _, f in ordered:
         rows, report = read_rows(f, tz)
-        events, conn = to_events(list(rows), vehicle_id)
+        rows = list(rows)
+        if on_rows is not None:
+            on_rows(rows)
+        events, conn = to_events(rows, vehicle_id)
         builder.feed(events, conn)
         result.reports.append(report)
         if report.first_ts and (result.first_ts is None or report.first_ts < result.first_ts):

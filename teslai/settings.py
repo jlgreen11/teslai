@@ -33,3 +33,4 @@ class Settings(BaseSettings):
     teslai_notify_urls: str = ""
     teslai_backup_dir: Path | None = None
     teslai_homeassistant: bool = False
+    teslai_pack_kwh: float = 75.0
