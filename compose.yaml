@@ -46,6 +46,8 @@ services:
       DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
       MQTT_HOST: mosquitto
       TESLAI_SECRETS_DIR: /app/secrets
+      TESLA_PROXY_URL: https://vehicle-command:4443
+      TESLA_PROXY_CA: /app/secrets/ca.cert.pem
     volumes:
       - ./secrets:/app/secrets:ro
     ports:
@@ -64,8 +66,10 @@ services:
       DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
       MQTT_HOST: mosquitto
       TESLAI_SECRETS_DIR: /app/secrets
+      TESLAI_RECORDINGS_DIR: /app/recordings
     volumes:
       - ./secrets:/app/secrets:ro
+      - ./recordings:/app/recordings
     depends_on:
       app:
         condition: service_started

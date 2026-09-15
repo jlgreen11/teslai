@@ -1,4 +1,4 @@
-# Public edge. Serves only the Tesla public key until owner login ships.
+# Public edge: the Tesla public key, and the web app behind owner login.
 # The telemetry port is not proxied here: the car connects to fleet-telemetry
 # directly with mTLS on its own port.
 {$TESLAI_DOMAIN} {
@@ -9,6 +9,6 @@
 		file_server
 	}
 	handle {
-		respond "Not found" 404
+		reverse_proxy app:8000
 	}
 }
