@@ -75,7 +75,8 @@ CATALOG: dict[str, ErrorInfo] = {
         ErrorInfo(
             "TSL-PARTNER-UNREGISTERED",
             "Tesla rejected a call because the app is not registered in this region.",
-            "The partner-account registration call was never made for TESLA_REGION.",
+            "The partner-account registration call was never made for TESLA_REGION, or "
+            "TESLA_REGION does not match where the car's account lives (HTTP 412).",
             "Run `teslai tesla register`.",
         ),
         ErrorInfo(
@@ -126,6 +127,18 @@ CATALOG: dict[str, ErrorInfo] = {
             "The car's firmware does not support a subscribed field.",
             "Some fields need newer firmware, for example DetailedChargeState needs 2024.38.",
             "Update the car's software, or remove the field from telemetry.yaml.",
+        ),
+        ErrorInfo(
+            "TSL-HARDWARE-UNSUPPORTED",
+            "The car's hardware does not support Fleet Telemetry.",
+            "Tesla skipped the car as unsupported hardware, for example some pre-2018 Model S/X.",
+            "No software fix exists. The car cannot stream telemetry to teslai.",
+        ),
+        ErrorInfo(
+            "TSL-CONFIG-EXPIRING",
+            "The car's telemetry config expires within 14 days.",
+            "The config was pushed with an `exp` timestamp that is approaching.",
+            "Run `teslai telemetry push --yes` to push a fresh config.",
         ),
         ErrorInfo(
             "TSL-VIN-REJECTED",

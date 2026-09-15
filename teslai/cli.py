@@ -21,6 +21,22 @@ import_app = typer.Typer(help="Import history from other loggers.")
 app.add_typer(import_app, name="import")
 gate_app = typer.Typer(help="Validation gates for migration and cutover.")
 app.add_typer(gate_app, name="gate")
+tesla_app = typer.Typer(help="Tesla developer app, login and pairing.")
+app.add_typer(tesla_app, name="tesla")
+telemetry_app = typer.Typer(help="The car's Fleet Telemetry config.")
+app.add_typer(telemetry_app, name="telemetry")
+
+
+def http_client(**kwargs):
+    """Factory so tests can swap in a mock transport."""
+    import httpx
+
+    return httpx.Client(timeout=30, **kwargs)
+
+
+def _fail(err) -> None:
+    typer.echo(str(err), err=True)
+    raise typer.Exit(1) from None
 
 ENV_EXAMPLE = Path(".env.example")
 
@@ -81,6 +97,9 @@ def init(
     generate_ca(paths)
     generate_server_cert(paths, host)
     generate_app_keys(paths)
+    from teslai.tesla.tokens import load_or_create_cipher
+
+    load_or_create_cipher(secrets_dir / "token.key")
 
     template = ENV_EXAMPLE.read_text() if ENV_EXAMPLE.exists() else ""
     db_password = pysecrets.token_urlsafe(24)
@@ -273,6 +292,187 @@ def worker(
     s = Settings()
     worker_mod.run(create_engine(s.database_url), s.mqtt_host, s.mqtt_port, s.mqtt_topic_base,
                    client_id=client_id)
+
+
+@tesla_app.command("register")
+def tesla_register() -> None:
+    """Register the developer app for TESLA_REGION and verify the hosted public key."""
+    from teslai.errors import TeslaiError
+    from teslai.settings import Settings
+    from teslai.tesla import auth
+    from teslai.tesla.regions import base_url
+
+    s = Settings()
+    if not s.tesla_client_id or not s.tesla_client_secret:
+        _fail(TeslaiError("TSL-TESLA-UNCONFIGURED"))
+    try:
+        base = base_url(s.tesla_region)
+        with http_client() as http:
+            token = auth.partner_token(http, s.tesla_client_id, s.tesla_client_secret, base)
+            auth.register_partner(http, base, token, s.teslai_domain)
+            remote = auth.registered_public_key(http, base, token, s.teslai_domain)
+    except TeslaiError as err:
+        _fail(err)
+    local = SecretPaths(s.teslai_secrets_dir).app_public_key.read_bytes()
+    if not auth.public_key_matches(remote, local):
+        typer.echo("Registered, but Tesla's stored key does not match secrets/"
+                   "com.tesla.3p.public-key.pem. Check the file served at https://"
+                   f"{s.teslai_domain}/.well-known/appspecific/com.tesla.3p.public-key.pem",
+                   err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Registered {s.teslai_domain} in region {s.tesla_region}; public key verified.")
+    typer.echo("Next: teslai tesla login")
+
+
+@tesla_app.command("login")
+def tesla_login() -> None:
+    """Authorize teslai for the owner's Tesla account and store encrypted tokens."""
+    import secrets as _secrets
+    from urllib.parse import parse_qs, urlparse
+
+    from sqlalchemy import create_engine, text
+
+    from teslai.db import repo
+    from teslai.errors import TeslaiError
+    from teslai.settings import Settings
+    from teslai.tesla import auth
+    from teslai.tesla.regions import base_url
+    from teslai.tesla.tokens import load_or_create_cipher, save_tokens
+
+    s = Settings()
+    if not (s.tesla_client_id and s.tesla_client_secret and s.tesla_redirect_uri):
+        _fail(TeslaiError("TSL-ENV-INCOMPLETE",
+                          "TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_REDIRECT_URI are required"))
+    state = _secrets.token_urlsafe(16)
+    typer.echo("Open this link, approve access, then paste the full URL you were redirected to:\n")
+    typer.echo(auth.authorize_url(s.tesla_client_id, s.tesla_redirect_uri, state))
+    pasted = typer.prompt("\nRedirected URL")
+    q = parse_qs(urlparse(pasted.strip()).query)
+    if q.get("state", [""])[0] != state or "code" not in q:
+        typer.echo("The URL has no code or the state does not match; start again.", err=True)
+        raise typer.Exit(1)
+    try:
+        with http_client() as http:
+            tokens = auth.exchange_code(http, s.tesla_client_id, s.tesla_client_secret,
+                                        q["code"][0], s.tesla_redirect_uri, base_url(s.tesla_region))
+    except TeslaiError as err:
+        _fail(err)
+    engine = create_engine(s.database_url)
+    with engine.begin() as conn:
+        ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
+        account_id = ids[0] if len(ids) == 1 else repo.create_account(conn, "owner")
+    cipher = load_or_create_cipher(SecretPaths(s.teslai_secrets_dir).root / "token.key")
+    save_tokens(engine, cipher, account_id, s.tesla_client_id, s.tesla_region,
+                auth.LOGGING_SCOPES, tokens)
+    typer.echo("Tesla login stored. Next: teslai pair")
+
+
+@app.command()
+def pair() -> None:
+    """Show the link that installs teslai's virtual key on the car."""
+    from teslai.settings import Settings
+
+    s = Settings()
+    link = f"https://tesla.com/_ak/{s.teslai_domain}"
+    typer.echo("On the phone that has the Tesla app, near the car, open:\n")
+    typer.echo(f"  {link}\n")
+    typer.echo("Approve the key in the Tesla app, then run: teslai telemetry push --yes")
+
+
+def _desired_body():
+    from datetime import UTC, datetime, timedelta
+
+    from teslai.config import default_field_specs
+    from teslai.settings import Settings
+    from teslai.tesla.telemetry_config import desired_config, request_body
+
+    s = Settings()
+    ca = SecretPaths(s.teslai_secrets_dir).ca_cert.read_text()
+    exp = datetime.now(UTC) + timedelta(days=s.tesla_telemetry_exp_days)
+    config = desired_config(default_field_specs(), s.teslai_telemetry_host,
+                            s.teslai_telemetry_port, ca, exp)
+    return s, request_body([s.tesla_vin] if s.tesla_vin else [], config)
+
+
+def _access_token(s) -> str:
+    from sqlalchemy import create_engine
+
+    from teslai.tesla import auth
+    from teslai.tesla.tokens import get_access_token, load_or_create_cipher
+    from teslai.worker import single_account_id
+
+    engine = create_engine(s.database_url)
+    cipher = load_or_create_cipher(SecretPaths(s.teslai_secrets_dir).root / "token.key")
+    with http_client() as http:
+        return get_access_token(engine, cipher, single_account_id(engine),
+                                lambda rt: auth.refresh(http, s.tesla_client_id, rt))
+
+
+@telemetry_app.command("push")
+def telemetry_push(
+    yes: bool = typer.Option(False, "--yes", help="Send the config. Without it, only show it."),
+    awake_hours: float = typer.Option(3.0, help="Awake hours per day for the cost upper bound."),
+    reason: str = typer.Option("", help="Why this push happens, recorded in the output."),
+) -> None:
+    """Push telemetry.yaml to the car through the signing proxy."""
+    from teslai.config import default_field_specs
+    from teslai.errors import CATALOG, TeslaiError
+    from teslai.tesla.telemetry_config import monthly_signal_upper_bound, push
+
+    try:
+        s, body = _desired_body()
+    except TeslaiError as err:
+        _fail(err)
+    signals, usd = monthly_signal_upper_bound(default_field_specs(), awake_hours)
+    typer.echo(f"{len(body['config']['fields'])} fields to {body['config']['hostname']}:"
+               f"{body['config']['port']}, CA from the private telemetry CA.")
+    typer.echo(f"Cost upper bound: {signals:,} signals ≈ ${usd:.2f}/month at {awake_hours} awake "
+               "hours/day. Actual cost is lower; fields send only on change.")
+    if reason:
+        typer.echo(f"Reason: {reason}")
+    if not yes:
+        typer.echo("Dry run. Re-run with --yes to push.")
+        return
+    try:
+        token = _access_token(s)
+        verify = str(s.tesla_proxy_ca) if s.tesla_proxy_ca else True
+        with http_client(verify=verify) as http:
+            result = push(http, s.tesla_proxy_url, token, body)
+    except TeslaiError as err:
+        _fail(err)
+    typer.echo(f"Updated {result.updated_vehicles} vehicle(s).")
+    for vin, code in result.problems:
+        i = CATALOG[code]
+        typer.echo(f"VIN ending {vin[-4:]}: {code}: {i.problem}\n  Fix: {i.fix}", err=True)
+    if result.problems:
+        raise typer.Exit(1)
+    typer.echo("Next: teslai telemetry status")
+
+
+@telemetry_app.command("status")
+def telemetry_status() -> None:
+    """Show whether the car has synced the desired config, and what is wrong if not."""
+    from teslai.errors import CATALOG, TeslaiError
+    from teslai.tesla.regions import base_url
+    from teslai.tesla.telemetry_config import check_status, diff, fetch
+
+    try:
+        s, body = _desired_body()
+        token = _access_token(s)
+        with http_client() as http:
+            status = fetch(http, base_url(s.tesla_region), token, s.tesla_vin)
+    except TeslaiError as err:
+        _fail(err)
+    typer.echo(f"synced: {status.synced}   limit_reached: {status.limit_reached}")
+    for change in diff(body["config"], status.config):
+        typer.echo(f"  diff: {change}")
+    codes = check_status(status, body["config"])
+    for code in codes:
+        i = CATALOG[code]
+        typer.echo(f"{code}: {i.problem}\n  Fix: {i.fix}")
+    if codes:
+        raise typer.Exit(1)
+    typer.echo("Telemetry config is synced and current.")
 
 
 if __name__ == "__main__":

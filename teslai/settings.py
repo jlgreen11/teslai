@@ -23,5 +23,9 @@ class Settings(BaseSettings):
     tesla_client_secret: str = ""
     tesla_region: str = "na"
     tesla_vin: str = ""
+    tesla_redirect_uri: str = ""
+    tesla_proxy_url: str = "https://localhost:4443"
+    tesla_proxy_ca: Path | None = None
+    tesla_telemetry_exp_days: int = 365
 
     teslai_session_secret: str = ""
