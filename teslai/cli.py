@@ -651,8 +651,11 @@ def monitor(
     while True:
         try:
             account_id = single_account_id(engine)
+            from teslai.rules import load_rule_config
+
             result = alerts.run_once(engine, account_id, notify, server_cert=cert,
-                                     backup_dir=s.teslai_backup_dir)
+                                     backup_dir=s.teslai_backup_dir,
+                                     rule_config=load_rule_config())
             log.info("checks done: %d fired, %d resolved", len(result["fired"]), len(result["resolved"]))
             now = datetime.now(UTC)
             if s.tesla_client_id and now - last_refresh_attempt > timedelta(days=7):

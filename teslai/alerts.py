@@ -20,6 +20,7 @@ from sqlalchemy import Engine, text
 
 from teslai.errors import CATALOG
 
+INFORMATIONAL_CODES = {"TSL-NEW-SOFTWARE"}
 PRICES = {"signal": 0.0001, "command": 0.001, "data": 0.002, "wake": 0.02}
 MONTHLY_CREDIT = 10.0
 
@@ -30,6 +31,7 @@ class Condition:
     key: str
     code: str
     detail: str
+    informational: bool = False
 
 
 Notifier = Callable[[str, str], None]  # (title, body)
@@ -130,6 +132,8 @@ def check_backups(backup_dir: Path, now: datetime, stale_after: timedelta = time
 
 def format_alert(c: Condition, resolved: bool = False) -> tuple[str, str]:
     info = CATALOG[c.code]
+    if c.informational or c.code in INFORMATIONAL_CODES:
+        return f"teslai: {info.problem}", c.detail
     if resolved:
         return f"Resolved: {info.problem}", f"{c.code} cleared ({c.detail})."
     return (f"teslai: {info.problem}",
@@ -138,7 +142,8 @@ def format_alert(c: Condition, resolved: bool = False) -> tuple[str, str]:
 
 def run_once(engine: Engine, account_id: int, notify: Notifier, now: datetime | None = None,
              server_cert: Path | None = None,
-             backup_dir: Path | None = None) -> dict[str, list[Condition]]:
+             backup_dir: Path | None = None,
+             rule_config=None) -> dict[str, list[Condition]]:
     now = now or datetime.now(UTC)
     with engine.connect() as conn:
         current = (check_billing(conn, account_id, now) + check_ingest_silence(conn, account_id, now)
@@ -147,6 +152,14 @@ def run_once(engine: Engine, account_id: int, notify: Notifier, now: datetime | 
         current += check_cert(server_cert, now)
     if backup_dir is not None:
         current += check_backups(backup_dir, now)
+    if rule_config is not None:
+        from teslai.db import repo
+        from teslai.rules import evaluate, vehicle_states
+
+        with engine.connect() as conn:
+            homes = [p for p in repo.list_places(conn, account_id) if p.kind == "home"]
+            for vid, last4, state, connected in vehicle_states(conn, account_id, now):
+                current += evaluate(vid, last4, state, connected, now, homes, rule_config)
     fired, resolved = [], []
     with engine.begin() as conn:
         open_rows = conn.execute(text("SELECT id, rule, key, code, message FROM rule_firings "
@@ -165,7 +178,9 @@ def run_once(engine: Engine, account_id: int, notify: Notifier, now: datetime | 
             if (rule, key) not in current_keys:
                 conn.execute(text("UPDATE rule_firings SET resolved_at = :t WHERE id = :i"),
                              {"t": now, "i": row.id})
-                resolved.append(Condition(rule, key, row.code, row.message))
+                # Informational rules (such as a new software version) have nothing to resolve.
+                if row.code not in INFORMATIONAL_CODES:
+                    resolved.append(Condition(rule, key, row.code, row.message))
     for c in fired:
         notify(*format_alert(c))
     for c in resolved:

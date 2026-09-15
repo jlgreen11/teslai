@@ -1,0 +1,15 @@
+# Copy to config/rules.yaml (gitignored) and edit.
+# Car state alerts evaluated by `teslai monitor` from the car's last known state,
+# so they still fire while the car sleeps.
+unlocked_away:
+  enabled: true
+  minutes: 10            # unlocked and parked this long, away from every place of kind "home"
+windows_open:
+  enabled: true
+  minutes: 10            # any window open while parked this long
+tire_pressure:
+  enabled: true
+  low_bar: 2.6           # Fleet Telemetry reports tire pressure in bar
+  high_bar: 3.5
+new_software:
+  enabled: true          # notify once for each software version the car reports

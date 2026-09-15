@@ -115,6 +115,19 @@ ls -l recordings/
 
 Drive or wake the car, then open the day view. If nothing arrives within a few minutes of the car waking, run `teslai doctor` and follow the first failure.
 
+## Alerts
+
+`teslai monitor` sends alerts to every Apprise URL in `TESLAI_NOTIFY_URLS`, for example `pover://user@token` for Pushover. Car alerts are configured in `config/rules.yaml`; copy `config/rules.example.yaml` to start:
+
+| Alert | Default |
+|---|---|
+| Unlocked while parked away from a place of kind `home` | 10 minutes |
+| A window open while parked | 10 minutes |
+| Tire pressure outside limits | below 2.6 or above 3.5 bar |
+| New software version | once per version |
+
+Each alert fires once and sends a "Resolved" notice when it clears. Load your places first (`teslai places load config/places.csv`) so being at home does not trigger the unlocked alert.
+
 ## Backups
 
 The `backup` service dumps the database nightly into `backups/`, keeps 14 days, and restores the newest dump into a scratch database every 7 dumps to check it. The monitor alerts if the newest dump is older than 36 hours or the restore check fails.

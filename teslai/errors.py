@@ -167,6 +167,30 @@ CATALOG: dict[str, ErrorInfo] = {
             "then check `docker compose logs backup`.",
         ),
         ErrorInfo(
+            "TSL-CAR-UNLOCKED",
+            "The car is parked and unlocked away from home.",
+            "It was left unlocked, or walk-away door lock is off.",
+            "Lock the car from the Tesla app.",
+        ),
+        ErrorInfo(
+            "TSL-WINDOW-OPEN",
+            "A window is open while the car is parked.",
+            "A window was left down or vent mode is on.",
+            "Close the windows from the Tesla app.",
+        ),
+        ErrorInfo(
+            "TSL-TIRE-PRESSURE",
+            "A tire pressure is outside the configured limits.",
+            "A slow leak, a temperature swing, or limits in config/rules.yaml that do not fit the car.",
+            "Check the tire, then adjust tire_pressure limits in config/rules.yaml if needed.",
+        ),
+        ErrorInfo(
+            "TSL-NEW-SOFTWARE",
+            "The car reports a new software version.",
+            "Tesla installed an update.",
+            "Nothing to do; this is a notice.",
+        ),
+        ErrorInfo(
             "TSL-VIN-REJECTED",
             "Telemetry arrived for a VIN that is not in the vehicles table.",
             "A car connected that this deployment does not own, or TESLA_VIN is wrong.",
