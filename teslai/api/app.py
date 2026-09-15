@@ -106,6 +106,16 @@ def create_app(engine: Engine | None = None, account_id: int | None = None,
 
         return asdict(summarize_day(day, tz, rows, tariffs=load_tariffs()))
 
+    @app.get("/api/v1/vehicles/{vehicle_id}/battery")
+    def battery(vehicle_id: int, min_level: float = 50.0):
+        from teslai.battery import build_report
+
+        with eng().connect() as conn:
+            a = account(conn)
+            vid, tz = vehicle(conn, a, vehicle_id)
+            rows = repo.charge_range_points(conn, a, vid)
+        return asdict(build_report(rows, tz, min_level=min_level))
+
     @app.get("/api/v1/vehicles/{vehicle_id}/sessions")
     def sessions(vehicle_id: int, start: datetime = Query(...), end: datetime = Query(...),
                  kind: str | None = None):

@@ -150,3 +150,14 @@ def test_sessions_capture_start_and_end_locations():
     drive = next(x for x in s if x.kind == "drive")
     assert drive.start_location == {"latitude": 39.0, "longitude": -94.5}
     assert drive.end_location == {"latitude": 39.2, "longitude": -94.7}
+
+
+def test_charge_records_rated_range_at_end():
+    evs = [e("RatedRange", 150.0, 0), e("BatteryLevel", 50, 0),
+           e("DetailedChargeState", "DetailedChargeStateCharging", 10),
+           e("ACChargingEnergyIn", 0.0, 10), e("ACChargingEnergyIn", 20.0, 100),
+           e("RatedRange", 270.0, 100), e("BatteryLevel", 90, 100),
+           e("DetailedChargeState", "DetailedChargeStateComplete", 101)]
+    s = build_sessions(evs, [Connectivity(t(0), True)], until=t(200))
+    charge = next(x for x in s if x.kind == "charge")
+    assert charge.end_rated_range == 270.0 and charge.end_battery == 90

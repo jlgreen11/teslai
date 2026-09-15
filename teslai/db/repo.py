@@ -156,15 +156,16 @@ def replace_sessions(conn: Connection, account_id: int, vehicle_id: int, start: 
             "eb": s.end_battery, "kwh": s.energy_added_kwh, "ch": s.charger,
             "fl": sorted(s.flags), "src": source, "bv": builder_version,
             "slat": slat, "slon": slon, "elat": elat, "elon": elon,
-            "sp": sp.id if sp else None, "ep": ep.id if ep else None})
+            "sp": sp.id if sp else None, "ep": ep.id if ep else None,
+            "rr": s.end_rated_range})
     if rows:
         conn.execute(
             text("INSERT INTO sessions (account_id, vehicle_id, kind, start_ts, end_ts, "
                  "start_odometer, end_odometer, start_battery, end_battery, energy_added_kwh, "
                  "charger, flags, source, builder_version, start_latitude, start_longitude, "
-                 "end_latitude, end_longitude, start_place_id, end_place_id) VALUES (:a, :v, :k, "
-                 ":st, :et, :so, :eo, :sb, :eb, :kwh, :ch, :fl, :src, :bv, :slat, :slon, :elat, "
-                 ":elon, :sp, :ep)"),
+                 "end_latitude, end_longitude, start_place_id, end_place_id, end_rated_range) "
+                 "VALUES (:a, :v, :k, :st, :et, :so, :eo, :sb, :eb, :kwh, :ch, :fl, :src, :bv, "
+                 ":slat, :slon, :elat, :elon, :sp, :ep, :rr)"),
             rows,
         )
     return len(rows)
@@ -239,4 +240,12 @@ def sessions_overlapping(conn: Connection, account_id: int, vehicle_id: int, sta
              "AND (s.end_ts IS NULL OR s.end_ts > :s) ORDER BY s.start_ts"),
         {"a": account_id, "v": vehicle_id, "s": start, "e": end},
     )
+    return [dict(r._mapping) for r in rows]
+
+
+def charge_range_points(conn: Connection, account_id: int, vehicle_id: int) -> list[dict]:
+    rows = conn.execute(text(
+        "SELECT end_ts, end_battery, end_rated_range FROM sessions WHERE account_id = :a "
+        "AND vehicle_id = :v AND kind = 'charge' AND end_ts IS NOT NULL "
+        "AND end_rated_range IS NOT NULL ORDER BY end_ts"), {"a": account_id, "v": vehicle_id})
     return [dict(r._mapping) for r in rows]

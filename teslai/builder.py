@@ -60,6 +60,7 @@ class Session:
     flags: set[str] = field(default_factory=set)
     start_location: dict | None = None
     end_location: dict | None = None
+    end_rated_range: float | None = None
 
     @property
     def distance(self) -> float | None:
@@ -124,6 +125,7 @@ class SessionBuilder:
         s.end_odometer = self._last(at, "Odometer")
         s.end_battery = self._last(at, "BatteryLevel")
         s.end_location = self._last(at, "Location")
+        s.end_rated_range = self._last(at, "RatedRange")
         if flag:
             s.flags.add(flag)
         if s.kind == "charge":
