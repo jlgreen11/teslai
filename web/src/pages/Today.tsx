@@ -105,8 +105,8 @@ export function Today() {
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-        <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 gap-3">
           <Card title="Battery" subtitle="State of charge through the day, shaded by what the car was doing"
             action={<div className="flex flex-wrap gap-3 text-xs text-ink-2">{(["drive", "charge", "sleep"] as const).map((k) => <span key={k} className="inline-flex items-center gap-1.5"><KindDot kind={k} />{KIND_LABEL[k]}</span>)}</div>}>
             {batteryOption && t.battery.length ? <Chart option={batteryOption} height={240} /> : <Empty>No battery readings on this day.</Empty>}
@@ -139,7 +139,7 @@ export function Today() {
           </Card>
         </div>
 
-        <div className="grid content-start gap-3">
+        <div className="grid min-w-0 content-start gap-3">
           <div className="grid grid-cols-2 gap-3">
             <Stat label="Distance" value={fmtMiles(x.miles)} sub={`${x.drives} drives · ${fmtDuration(x.drive_seconds)}`} accent={KIND_COLOR.drive} />
             <Stat label="Energy used" value={fmtKwh(x.kwh_used)} sub={x.wh_per_mile ? `${fmtNum(x.wh_per_mile)} Wh/mi` : "–"} accent={KIND_COLOR.drive} />

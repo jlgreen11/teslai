@@ -72,5 +72,5 @@ export function Chart({ option, height = 240, group, onClick }: { option: EChart
     if (group) { c.group = group; echarts.connect(group); }
   }, [option, group]);
 
-  return <div ref={ref} style={{ height, width: "100%" }} />;
+  return <div ref={ref} className="min-w-0 overflow-hidden" style={{ height, width: "100%" }} />;
 }

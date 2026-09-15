@@ -5,7 +5,7 @@ import { KIND_COLOR } from "../charts/Chart";
 
 export function Card({ title, subtitle, action, children, className = "", pad = true }: { title?: ReactNode; subtitle?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; pad?: boolean }) {
   return (
-    <section className={`card ${pad ? "p-4" : ""} ${className}`}>
+    <section className={`card min-w-0 ${pad ? "p-4" : ""} ${className}`}>
       {(title || action) && (
         <header className={`mb-3 flex flex-wrap items-start justify-between gap-2 ${pad ? "" : "px-4 pt-4"}`}>
           <div>
@@ -22,7 +22,7 @@ export function Card({ title, subtitle, action, children, className = "", pad = 
 
 export function Stat({ label, value, sub, accent }: { label: string; value: ReactNode; sub?: ReactNode; accent?: string }) {
   return (
-    <div className="card relative overflow-hidden px-4 py-3">
+    <div className="card relative min-w-0 overflow-hidden px-4 py-3">
       {accent && <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: accent }} />}
       <div className="text-xs text-ink-3">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tracking-tight text-ink">{value}</div>
