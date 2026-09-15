@@ -160,3 +160,16 @@ def sessions_between(conn: Connection, account_id: int, vehicle_id: int, start: 
         q += " AND kind = :k"
         params["k"] = kind
     return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY start_ts"), params)]
+
+
+def sessions_overlapping(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
+                         end: datetime) -> list[dict]:
+    """Sessions that overlap [start, end), including ones still open."""
+    rows = conn.execute(
+        text("SELECT kind, start_ts, end_ts, start_odometer, end_odometer, start_battery, "
+             "end_battery, energy_added_kwh, charger, flags, builder_version FROM sessions "
+             "WHERE account_id = :a AND vehicle_id = :v AND start_ts < :e "
+             "AND (end_ts IS NULL OR end_ts > :s) ORDER BY start_ts"),
+        {"a": account_id, "v": vehicle_id, "s": start, "e": end},
+    )
+    return [dict(r._mapping) for r in rows]

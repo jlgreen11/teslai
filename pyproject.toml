@@ -31,7 +31,7 @@ teslai = "teslai.cli:app"
 include = ["teslai*"]
 
 [tool.setuptools.package-data]
-teslai = ["../config/*.yaml"]
+teslai = ["api/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -45,5 +45,5 @@ target-version = "py312"
 extend-select = ["B", "I", "UP"]
 
 [tool.ruff.lint.flake8-bugbear]
-# Typer declares CLI options as argument defaults by design.
-extend-immutable-calls = ["typer.Option", "typer.Argument", "pathlib.Path"]
+# Typer and FastAPI declare options and query parameters as argument defaults by design.
+extend-immutable-calls = ["typer.Option", "typer.Argument", "pathlib.Path", "fastapi.Query"]
