@@ -324,6 +324,46 @@ def import_teslafi_cmd(
     typer.echo(f"\nStored {n} sessions for VIN ending {vin[-4:]}.")
 
 
+@gate_app.command("live")
+def gate_live(
+    days: int = typer.Option(14, help="Window of live telemetry to check, ending now."),
+    vin: str = typer.Option("", help="VIN (defaults to TESLA_VIN)."),
+    pack_kwh: float = typer.Option(75.0, help="Usable pack size for the energy check."),
+) -> None:
+    """Check live telemetry sessions before cancelling TeslaFi."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+
+    from teslai.db import repo
+    from teslai.live_gate import LiveGateParams, evaluate, passed
+    from teslai.settings import Settings
+    from teslai.worker import single_account_id
+
+    s = Settings()
+    engine = create_engine(s.database_url)
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    account_id = single_account_id(engine)
+    with engine.connect() as conn:
+        vehicle_id = repo.vehicle_id_for_vin(conn, account_id, vin or s.tesla_vin)
+        sessions, live_count, connectivity, event_times, synced = repo.live_gate_inputs(
+            conn, account_id, vehicle_id, start, end)
+    if live_count == 0:
+        typer.echo(f"No live-telemetry sessions in the last {days} days; nothing to check yet.", err=True)
+        raise typer.Exit(1)
+    checks = evaluate(sessions, connectivity, event_times, end, synced, LiveGateParams(pack_kwh=pack_kwh))
+    for c in checks:
+        mark = "PASS" if c.ok else ("FAIL" if c.severity == "fail" else "WARN")
+        typer.echo(f"[{mark}] {c.name}: {c.summary}")
+        for problem in c.problems[:10]:
+            typer.echo(f"         {problem}")
+    if not passed(checks):
+        typer.echo("\nLive gate FAILED. Keep TeslaFi. Fix the failures and run again.")
+        raise typer.Exit(1)
+    typer.echo(f"\nLive gate passed for {days} days of telemetry.")
+
+
 @gate_app.command("history")
 def gate_history_cmd(
     paths: list[Path] = typer.Argument(..., help="TeslaFi CSV files or directories."),
@@ -622,6 +662,31 @@ def telemetry_push(
     if result.problems:
         raise typer.Exit(1)
     typer.echo("Next: teslai telemetry status")
+
+
+@telemetry_app.command("remove")
+def telemetry_remove(yes: bool = typer.Option(False, "--yes", help="Delete the config. Without it, only explain.")) -> None:
+    """Delete teslai's telemetry config from the car (rollback step)."""
+    from teslai.errors import TeslaiError
+    from teslai.settings import Settings
+    from teslai.tesla.regions import base_url
+    from teslai.tesla.telemetry_config import fetch, remove
+
+    s = Settings()
+    typer.echo(f"This deletes teslai's Fleet Telemetry config from VIN ending {s.tesla_vin[-4:] or '????'}. "
+               "The car stops streaming to teslai until `teslai telemetry push --yes`.")
+    if not yes:
+        typer.echo("Dry run. Re-run with --yes to delete.")
+        return
+    try:
+        token = _access_token(s)
+        with http_client() as http:
+            remove(http, base_url(s.tesla_region), token, s.tesla_vin)
+            status = fetch(http, base_url(s.tesla_region), token, s.tesla_vin)
+    except TeslaiError as err:
+        _fail(err)
+    typer.echo(f"Deleted. Car now reports synced={status.synced}, config={'present' if status.config else 'none'}.")
+    typer.echo("To go back to TeslaFi, re-enable Fleet Telemetry in TeslaFi's settings.")
 
 
 @telemetry_app.command("status")

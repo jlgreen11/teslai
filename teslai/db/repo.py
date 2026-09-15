@@ -283,3 +283,21 @@ def store_charging_history(conn: Connection, account_id: int, vehicle_id: int, r
         stored += 1
         matched += int(match is not None)
     return {"stored": stored, "matched": matched}
+
+
+def live_gate_inputs(conn: Connection, account_id: int, vehicle_id: int, start: datetime, end: datetime):
+    sessions = [r for r in sessions_between(conn, account_id, vehicle_id, start, end)]
+    source = conn.execute(text("SELECT count(*) FROM sessions WHERE account_id = :a AND vehicle_id = :v "
+                               "AND source = 'telemetry' AND start_ts >= :s AND start_ts < :e"),
+                          {"a": account_id, "v": vehicle_id, "s": start, "e": end}).scalar()
+    connectivity = [(r.ts, r.connected) for r in conn.execute(text(
+        "SELECT ts, connected FROM connectivity_events WHERE account_id = :a AND vehicle_id = :v "
+        "AND ts >= :s AND ts < :e ORDER BY ts"), {"a": account_id, "v": vehicle_id, "s": start, "e": end})]
+    event_times = conn.execute(text(
+        "SELECT DISTINCT ts FROM telemetry_events WHERE account_id = :a AND vehicle_id = :v "
+        "AND ts >= :s AND ts < :e ORDER BY ts"), {"a": account_id, "v": vehicle_id, "s": start, "e": end}
+    ).scalars().all()
+    history_synced = bool(conn.execute(text(
+        "SELECT 1 FROM supercharger_sessions WHERE account_id = :a AND vehicle_id = :v LIMIT 1"),
+        {"a": account_id, "v": vehicle_id}).scalar())
+    return sessions, int(source), connectivity, list(event_times), history_synced

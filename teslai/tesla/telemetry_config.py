@@ -135,3 +135,11 @@ def monthly_signal_upper_bound(specs: dict[str, FieldSpec], awake_hours_per_day:
     per_hour = sum(3600 / s.interval_seconds for s in specs.values())
     signals = int(per_hour * awake_hours_per_day * 30)
     return signals, round(signals * SIGNAL_PRICE_USD, 2)
+
+
+def remove(http: httpx.Client, base_url: str, token: str, vin: str) -> dict:
+    """Delete this app's telemetry config from the car (DELETE .../fleet_telemetry_config)."""
+    resp = http.delete(f"{base_url}/api/1/vehicles/{vin}/fleet_telemetry_config",
+                       headers={"Authorization": f"Bearer {token}"})
+    raise_for_tesla(resp, "telemetry config delete")
+    return resp.json().get("response", {})

@@ -141,6 +141,33 @@ cat backups/last-verify.json
 
 **Offsite copies are not automated yet.** Until they are, copy `backups/` off the VM, for example from the Mac Mini: `rsync -a vm:teslai/backups/ ~/teslai-backups/`.
 
-## Before cutting over from TeslaFi
+## Cutover from TeslaFi
 
-Do not remove TeslaFi's telemetry config until the history gate passes and the rollback runbook has been rehearsed. See docs/ARCHITECTURE.md, section 7.
+Do these in order. Stop at any failure and keep TeslaFi.
+
+1. **History gate.** Import your TeslaFi history and compare it with TeslaFi's own totals:
+
+   ```bash
+   teslai import teslafi ~/teslafi-export --tz America/Chicago --write --vin <VIN>
+   teslai gate history ~/teslafi-export --tz America/Chicago --answer-key drives.json --answer-key charges.json
+   ```
+
+2. **Try running both.** Push teslai's config while TeslaFi is still streaming. If `teslai telemetry status` reports `TSL-CONFIG-NULL`, the car will not stream to two apps (fleet-telemetry issue #294), so continue with step 3.
+3. **Rehearse the rollback** before touching TeslaFi:
+
+   ```bash
+   docker compose exec app teslai telemetry remove          # read what it will do
+   docker compose exec app teslai telemetry remove --yes    # delete teslai's config
+   ```
+
+   Then re-enable telemetry in TeslaFi's settings and confirm TeslaFi logs a drive. Rollback is now proven.
+4. **Cut over.** Disable Fleet Telemetry in TeslaFi's settings, then push teslai's config with `teslai telemetry push --yes` and check `teslai telemetry status`.
+5. **Live gate, after 2 to 4 weeks of driving:**
+
+   ```bash
+   docker compose exec app teslai tesla charging-history
+   docker compose exec app teslai gate live --days 14
+   ```
+
+   It fails if drive miles disagree with the odometer, if the car moved between drives without a logged drive, or if telemetry went silent while the car was connected. Energy and Supercharger findings are warnings to read.
+6. **Cancel TeslaFi** only after the live gate passes. Keep your TeslaFi export files.
