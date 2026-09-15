@@ -1,5 +1,5 @@
 # teslai stack.
-#   default:  db, mosquitto, app (localhost:8000), worker
+#   default:  db, mosquitto, app (localhost:8000), worker, monitor
 #   edge:     caddy, public key hosting on TESLAI_DOMAIN (docker compose --profile edge up -d)
 #   edge also runs fleet-telemetry (car mTLS on TESLAI_TELEMETRY_PORT) and the
 #   vehicle-command proxy (internal network only). Run `teslai telemetry server-config` first.
@@ -74,6 +74,21 @@ services:
       app:
         condition: service_started
       mosquitto:
+        condition: service_started
+
+  monitor:
+    image: teslai-app:dev
+    restart: unless-stopped
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
+    command: ["teslai", "monitor"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
+      TESLAI_SECRETS_DIR: /app/secrets
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      app:
         condition: service_started
 
   caddy:

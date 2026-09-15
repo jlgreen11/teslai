@@ -141,6 +141,25 @@ CATALOG: dict[str, ErrorInfo] = {
             "Run `teslai telemetry push --yes` to push a fresh config.",
         ),
         ErrorInfo(
+            "TSL-INGEST-SILENT",
+            "The car reports connected but no telemetry has arrived recently.",
+            "The telemetry config is unsynced, fleet-telemetry or the worker stopped, or the "
+            "telemetry certificate chain changed.",
+            "Run `teslai doctor` and `docker compose exec app teslai telemetry status`.",
+        ),
+        ErrorInfo(
+            "TSL-BILLING-THRESHOLD",
+            "This month's Tesla API usage passed an alert threshold of the free credit.",
+            "Fields are sending more often than expected, or commands and wakes are frequent.",
+            "Raise minimum_delta or interval_seconds in telemetry.yaml, then push the config.",
+        ),
+        ErrorInfo(
+            "TSL-TOKEN-AGING",
+            "The Tesla login has not been refreshed recently and may expire.",
+            "Refresh tokens expire after 3 months without use.",
+            "Keep `teslai monitor` running, or run `teslai tesla login` again.",
+        ),
+        ErrorInfo(
             "TSL-VIN-REJECTED",
             "Telemetry arrived for a VIN that is not in the vehicles table.",
             "A car connected that this deployment does not own, or TESLA_VIN is wrong.",

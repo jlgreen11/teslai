@@ -593,5 +593,53 @@ def telemetry_status() -> None:
     typer.echo("Telemetry config is synced and current.")
 
 
+@app.command()
+def monitor(
+    once: bool = typer.Option(False, help="Run the checks once and exit."),
+    interval: int = typer.Option(60, help="Seconds between checks."),
+) -> None:
+    """Evaluate health rules, notify on new and resolved alerts, keep the Tesla login fresh."""
+    import logging
+    import time
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+
+    from teslai import alerts
+    from teslai.settings import Settings
+    from teslai.worker import single_account_id
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    log = logging.getLogger("teslai.monitor")
+    s = Settings()
+    urls = [u.strip() for u in s.teslai_notify_urls.split(",") if u.strip()]
+
+    def notify(title: str, body: str) -> None:
+        log.warning("%s | %s", title, body.replace("\n", " | "))
+        if urls:
+            alerts.apprise_notifier(urls)(title, body)
+
+    engine = create_engine(s.database_url)
+    cert = SecretPaths(s.teslai_secrets_dir).server_cert
+    last_refresh_attempt = datetime.min.replace(tzinfo=UTC)
+    while True:
+        try:
+            account_id = single_account_id(engine)
+            result = alerts.run_once(engine, account_id, notify, server_cert=cert)
+            log.info("checks done: %d fired, %d resolved", len(result["fired"]), len(result["resolved"]))
+            now = datetime.now(UTC)
+            if s.tesla_client_id and now - last_refresh_attempt > timedelta(days=7):
+                last_refresh_attempt = now
+                try:
+                    _access_token(s)
+                except Exception as err:  # noqa: BLE001 - reported, retried next week
+                    log.warning("Tesla token refresh failed: %s", str(err).splitlines()[0])
+        except Exception as err:  # noqa: BLE001 - monitor must keep running
+            log.warning("monitor cycle failed: %s", str(err).splitlines()[0][:200])
+        if once:
+            return
+        time.sleep(interval)
+
+
 if __name__ == "__main__":
     app()

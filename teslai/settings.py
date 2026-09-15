@@ -30,3 +30,4 @@ class Settings(BaseSettings):
     tesla_telemetry_exp_days: int = 365
 
     teslai_session_secret: str = ""
+    teslai_notify_urls: str = ""
