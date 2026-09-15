@@ -257,5 +257,23 @@ def gate_history_cmd(
         raise typer.Exit(1)
 
 
+@app.command()
+def worker(
+    client_id: str = typer.Option("teslai-worker", help="Fixed MQTT client id for durable sessions."),
+) -> None:
+    """Consume fleet-telemetry messages from MQTT into the database."""
+    import logging
+
+    from sqlalchemy import create_engine
+
+    from teslai import worker as worker_mod
+    from teslai.settings import Settings
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    s = Settings()
+    worker_mod.run(create_engine(s.database_url), s.mqtt_host, s.mqtt_port, s.mqtt_topic_base,
+                   client_id=client_id)
+
+
 if __name__ == "__main__":
     app()
