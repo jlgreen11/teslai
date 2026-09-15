@@ -18,3 +18,8 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+
+# Owner-specific configuration
+config/tariffs.yaml
+config/places.csv
+config/rules.yaml
