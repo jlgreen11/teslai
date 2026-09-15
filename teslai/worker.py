@@ -148,8 +148,9 @@ def single_account_id(engine: Engine) -> int:
     with engine.connect() as conn:
         ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
     if len(ids) != 1:
-        raise RuntimeError("Personal mode expects exactly one account; run an import or "
-                           "`teslai vehicle add` first.")
+        raise RuntimeError("Personal mode expects exactly one account; create it with "
+                           "`teslai owner create`, `teslai tesla login` or "
+                           "`teslai import teslafi --write`.")
     return ids[0]
 
 
