@@ -5,6 +5,20 @@
 
 **Status.** Draft 4, 2026-09-14, revised by the `/autoplan` review. Scope is now **personal tool first**: teslai replaces TeslaFi for the owner's car before any decision to share it. Phases 0 through 4 can start on the owner's go-ahead. Sharing is a separate, gated decision (section 8).
 
+## Build status (2026-09-15)
+
+| Phase | State | What exists |
+|---|---|---|
+| 0. Foundations | **Built** | `teslai` CLI (`init`, `doctor`, `errors`), error catalog, private CA and app keys, `telemetry.yaml` and `enums.yaml`, Postgres 16 + PostGIS (arm64), durable Mosquitto, account-scoped repository, CI with Postgres and Mosquitto |
+| 1. Import and core | **Built, not yet run on real data** | DST-safe TeslaFi importer, carry-forward reducer with history, session builder, sessions table, `teslai import teslafi`, `teslai gate history`, day view |
+| 2. Live and cutover | **Code built; deployment waits on the owner** | MQTT worker with manual acks and payload recording, `teslai replay`, Tesla OAuth and partner registration, encrypted single-refresher tokens, `teslai tesla register/login`, `teslai pair`, `teslai telemetry server-config/push/status`, owner login with TOTP, containers and edge services verified locally, deployment runbook |
+| 3. Daily parity | **Started** | Charging cost with time-of-use tariffs and gas savings |
+| 4. Full parity | Not started | |
+
+**Waiting on the owner:** the TeslaFi full-history CSV and history API token for the real history gate; the server, domain, Tesla developer app and key pairing for live telemetry ([deployment runbook](runbooks/deploy.md)).
+
+**Verified during the build, not in the original plan:** fleet-telemetry's MQTT payloads have no timestamp (receive time is used); reliable acks only work for vehicle-data records; the command proxy image's entrypoint is the proxy itself; containers must run as the host user to read `secrets/`.
+
 ## Decisions made
 
 | Decision | Choice | Date |
