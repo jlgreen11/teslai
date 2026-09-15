@@ -23,3 +23,4 @@ __pycache__/
 config/tariffs.yaml
 config/places.csv
 config/rules.yaml
+backups/

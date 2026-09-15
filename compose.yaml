@@ -1,5 +1,5 @@
 # teslai stack.
-#   default:  db, mosquitto, app (localhost:8000), worker, monitor
+#   default:  db, mosquitto, app (localhost:8000), worker, monitor, backup
 #   edge:     caddy, public key hosting on TESLAI_DOMAIN (docker compose --profile edge up -d)
 #   edge also runs fleet-telemetry (car mTLS on TESLAI_TELEMETRY_PORT) and the
 #   vehicle-command proxy (internal network only). Run `teslai telemetry server-config` first.
@@ -85,11 +85,29 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://teslai:${POSTGRES_PASSWORD}@db:5432/teslai
       TESLAI_SECRETS_DIR: /app/secrets
+      TESLAI_BACKUP_DIR: /app/backups
     volumes:
       - ./secrets:/app/secrets:ro
+      - ./backups:/app/backups:ro
     depends_on:
       app:
         condition: service_started
+
+  backup:
+    image: teslai-db:16-postgis3
+    restart: unless-stopped
+    user: "${TESLAI_UID:-10001}:${TESLAI_GID:-10001}"
+    entrypoint: ["bash", "/ops/backup.sh"]
+    command: ["loop"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./ops/backup/backup.sh:/ops/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
 
   caddy:
     image: caddy:2

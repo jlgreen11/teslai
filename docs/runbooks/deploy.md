@@ -115,6 +115,18 @@ ls -l recordings/
 
 Drive or wake the car, then open the day view. If nothing arrives within a few minutes of the car waking, run `teslai doctor` and follow the first failure.
 
+## Backups
+
+The `backup` service dumps the database nightly into `backups/`, keeps 14 days, and restores the newest dump into a scratch database every 7 dumps to check it. The monitor alerts if the newest dump is older than 36 hours or the restore check fails.
+
+```bash
+docker compose run --rm backup once      # dump now
+docker compose run --rm backup verify    # restore check now
+cat backups/last-verify.json
+```
+
+**Offsite copies are not automated yet.** Until they are, copy `backups/` off the VM, for example from the Mac Mini: `rsync -a vm:teslai/backups/ ~/teslai-backups/`.
+
 ## Before cutting over from TeslaFi
 
 Do not remove TeslaFi's telemetry config until the history gate passes and the rollback runbook has been rehearsed. See docs/ARCHITECTURE.md, section 7.

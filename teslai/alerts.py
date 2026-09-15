@@ -97,6 +97,37 @@ def check_cert(server_cert: Path, now: datetime) -> list[Condition]:
     return []
 
 
+def check_backups(backup_dir: Path, now: datetime, stale_after: timedelta = timedelta(hours=36),
+                  verify_stale_after: timedelta = timedelta(days=8)) -> list[Condition]:
+    import json
+
+    if not backup_dir.exists():
+        return [Condition("backup", "missing", "TSL-BACKUP-STALE", f"{backup_dir} does not exist")]
+    dumps = sorted(backup_dir.glob("teslai-*.dump"), key=lambda p: p.stat().st_mtime)
+    out = []
+    if not dumps:
+        out.append(Condition("backup", "dump", "TSL-BACKUP-STALE", "no backups yet"))
+    else:
+        age = now - datetime.fromtimestamp(dumps[-1].stat().st_mtime, UTC)
+        if age > stale_after:
+            out.append(Condition("backup", "dump", "TSL-BACKUP-STALE",
+                                 f"newest backup is {age.total_seconds() / 3600:.0f} hours old"))
+    status_file = backup_dir / "last-verify.json"
+    if status_file.exists():
+        try:
+            status = json.loads(status_file.read_text())
+            verified = datetime.fromisoformat(status["verified_at"])
+        except (ValueError, KeyError):
+            return out + [Condition("backup", "verify", "TSL-BACKUP-STALE", "unreadable restore check")]
+        if status.get("status") != "ok":
+            out.append(Condition("backup", "verify", "TSL-BACKUP-STALE",
+                                 f"restore check failed: {status.get('tables', '')}"))
+        elif now - verified > verify_stale_after:
+            out.append(Condition("backup", "verify", "TSL-BACKUP-STALE",
+                                 f"last restore check {(now - verified).days} days ago"))
+    return out
+
+
 def format_alert(c: Condition, resolved: bool = False) -> tuple[str, str]:
     info = CATALOG[c.code]
     if resolved:
@@ -106,13 +137,16 @@ def format_alert(c: Condition, resolved: bool = False) -> tuple[str, str]:
 
 
 def run_once(engine: Engine, account_id: int, notify: Notifier, now: datetime | None = None,
-             server_cert: Path | None = None) -> dict[str, list[Condition]]:
+             server_cert: Path | None = None,
+             backup_dir: Path | None = None) -> dict[str, list[Condition]]:
     now = now or datetime.now(UTC)
     with engine.connect() as conn:
         current = (check_billing(conn, account_id, now) + check_ingest_silence(conn, account_id, now)
                    + check_token_age(conn, account_id, now))
     if server_cert is not None:
         current += check_cert(server_cert, now)
+    if backup_dir is not None:
+        current += check_backups(backup_dir, now)
     fired, resolved = [], []
     with engine.begin() as conn:
         open_rows = conn.execute(text("SELECT id, rule, key, code, message FROM rule_firings "

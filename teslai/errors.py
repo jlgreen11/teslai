@@ -160,6 +160,13 @@ CATALOG: dict[str, ErrorInfo] = {
             "Keep `teslai monitor` running, or run `teslai tesla login` again.",
         ),
         ErrorInfo(
+            "TSL-BACKUP-STALE",
+            "No recent verified database backup exists.",
+            "The backup service stopped, the disk is full, or the last restore check failed.",
+            "Run `docker compose run --rm backup once` and `docker compose run --rm backup verify`, "
+            "then check `docker compose logs backup`.",
+        ),
+        ErrorInfo(
             "TSL-VIN-REJECTED",
             "Telemetry arrived for a VIN that is not in the vehicles table.",
             "A car connected that this deployment does not own, or TESLA_VIN is wrong.",

@@ -31,3 +31,4 @@ class Settings(BaseSettings):
 
     teslai_session_secret: str = ""
     teslai_notify_urls: str = ""
+    teslai_backup_dir: Path | None = None
