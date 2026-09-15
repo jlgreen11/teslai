@@ -60,6 +60,7 @@ async function load() {
   $("list").innerHTML = '<p class="empty">Loading…</p>';
   try {
     const r = await fetch(`/api/v1/vehicles/${v}/days/${d}`);
+    if (r.status === 401) { location.href = "/login"; return; }
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const day = await r.json();
     $("totals").innerHTML = [
@@ -89,7 +90,9 @@ function shift(days) {
 (async () => {
   $("date").value = new URLSearchParams(location.search).get("date") || today();
   try {
-    const vs = await (await fetch("/api/v1/vehicles")).json();
+    const vr = await fetch("/api/v1/vehicles");
+    if (vr.status === 401) { location.href = "/login"; return; }
+    const vs = await vr.json();
     if (!Array.isArray(vs) || !vs.length) { $("list").innerHTML = '<p class="empty">No vehicles yet. Import history with <code>teslai import teslafi --write</code>.</p>'; return; }
     $("vehicle").innerHTML = vs.map((v) => `<option value="${v.id}">${v.display_name || "Car"} ···${v.vin_last4}</option>`).join("");
   } catch (e) { $("list").innerHTML = `<p class="error">API unavailable: ${e.message}</p>`; return; }

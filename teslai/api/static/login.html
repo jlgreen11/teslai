@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>teslai login</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #fbfbfd; --line: #d2d2d7; --accent: #0a84ff; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #98989d; --bg: #1c1c1e; --line: #48484a; } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+         font: 16px/1.4 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  form { width: 100%; max-width: 340px; display: grid; gap: 12px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  input { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--fg); }
+  button { font: inherit; padding: 11px; border: 0; border-radius: 10px; background: var(--accent); color: white; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  #msg { min-height: 1.4em; color: #ff453a; font-size: 14px; margin: 0; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>teslai</h1>
+  <label>Email <input name="email" type="email" autocomplete="username" required></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <label>Authenticator code <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required></label>
+  <button id="b" type="submit">Sign in</button>
+  <p id="msg" role="alert"></p>
+</form>
+<script>
+document.getElementById("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const b = document.getElementById("b"), msg = document.getElementById("msg");
+  b.disabled = true; msg.textContent = "";
+  const data = Object.fromEntries(new FormData(e.target));
+  try {
+    const r = await fetch("/api/v1/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    if (r.ok) { location.href = "/"; return; }
+    msg.textContent = (await r.json()).detail || "Sign in failed.";
+  } catch (err) { msg.textContent = "Network error. Try again."; }
+  b.disabled = false;
+});
+</script>
+</body>
+</html>

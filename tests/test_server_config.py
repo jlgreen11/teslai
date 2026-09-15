@@ -16,7 +16,7 @@ def test_fleet_telemetry_config_routes_all_records_to_mqtt_with_reliable_ack():
     c = fleet_telemetry_config(port=4443)
     assert set(c["records"]) == {"V", "connectivity", "alerts", "errors"}
     assert all(v == ["mqtt"] for v in c["records"].values())
-    assert c["reliable_ack"] is True and c["reliable_ack_sources"]["V"] == "mqtt"
+    assert c["reliable_ack"] is True and c["reliable_ack_sources"] == {"V": "mqtt"}
     assert c["mqtt"]["qos"] == 1 and c["mqtt"]["broker"] == "mosquitto:1883"
     assert c["tls"]["server_cert"].endswith("telemetry-server.cert.pem")
 

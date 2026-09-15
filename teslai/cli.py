@@ -27,6 +27,48 @@ telemetry_app = typer.Typer(help="The car's Fleet Telemetry config.")
 app.add_typer(telemetry_app, name="telemetry")
 db_app = typer.Typer(help="Database migrations.")
 app.add_typer(db_app, name="db")
+owner_app = typer.Typer(help="Owner login for the web app.")
+app.add_typer(owner_app, name="owner")
+
+
+@owner_app.command("create")
+def owner_create(email: str = typer.Option(..., help="Login email.")) -> None:
+    """Create or reset the owner's password and authenticator code."""
+    from sqlalchemy import create_engine, text
+
+    from teslai import owner_auth
+    from teslai.db import repo
+    from teslai.settings import Settings
+    from teslai.tesla.tokens import load_or_create_cipher
+
+    s = Settings()
+    password = typer.prompt("Password (12+ characters)", hide_input=True,
+                            confirmation_prompt=True)
+    try:
+        pw_hash = owner_auth.hash_password(password)
+    except ValueError as err:
+        typer.echo(str(err), err=True)
+        raise typer.Exit(2) from None
+    secret = owner_auth.new_totp_secret()
+    typer.echo("\nAdd this to your authenticator app:")
+    typer.echo(f"  {owner_auth.provisioning_uri(secret, email)}")
+    typer.echo(f"  (or enter the key manually: {secret})\n")
+    code = typer.prompt("Enter the 6-digit code it shows")
+    if not owner_auth.verify_totp(secret, code):
+        typer.echo("That code does not match; nothing was saved. Run the command again.", err=True)
+        raise typer.Exit(1)
+    cipher = load_or_create_cipher(SecretPaths(s.teslai_secrets_dir).root / "token.key")
+    engine = create_engine(s.database_url)
+    with engine.begin() as conn:
+        ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
+        account_id = ids[0] if len(ids) == 1 else repo.create_account(conn, "owner")
+        conn.execute(text("""
+            INSERT INTO users (account_id, email, password_hash, totp_secret_enc)
+            VALUES (:a, :e, :p, :t)
+            ON CONFLICT (account_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+                totp_secret_enc = EXCLUDED.totp_secret_enc, failed_logins = 0, locked_until = NULL"""),
+            {"a": account_id, "e": email, "p": pw_hash, "t": cipher.encrypt(secret.encode())})
+    typer.echo(f"Owner login saved for {email}.")
 
 
 @db_app.command("upgrade")

@@ -1,8 +1,7 @@
 """Owner-facing HTTP API and day view.
 
-Phase 1 binds to localhost only and serves no location data. Owner login ships in
-phase 2, before this API is reachable from outside the machine or returns
-locations (docs/ARCHITECTURE.md, section 10).
+Every route except /healthz, /login and the login API requires the owner's
+session cookie (teslai.owner_auth). The API still serves no location data.
 """
 
 from dataclasses import asdict
@@ -10,11 +9,12 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine, text
 
-from teslai import __version__
+from teslai import __version__, owner_auth
 from teslai.days import day_window, summarize_day
 from teslai.db import repo
 from teslai.settings import Settings
@@ -22,9 +22,42 @@ from teslai.settings import Settings
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(engine: Engine | None = None, account_id: int | None = None) -> FastAPI:
+PUBLIC_PATHS = {"/healthz", "/login", "/api/v1/login"}
+
+
+class LoginBody(BaseModel):
+    email: str
+    password: str
+    code: str
+
+
+def create_app(engine: Engine | None = None, account_id: int | None = None,
+               require_login: bool = True, session_secret: str | None = None,
+               cipher=None, secure_cookies: bool = True) -> FastAPI:
     app = FastAPI(title="teslai", version=__version__)
-    state: dict = {"engine": engine, "account_id": account_id}
+    state: dict = {"engine": engine, "account_id": account_id, "cipher": cipher}
+
+    def secret() -> str:
+        return session_secret or Settings().teslai_session_secret
+
+    def get_cipher():
+        if state["cipher"] is None:
+            from teslai.secrets import SecretPaths
+            from teslai.tesla.tokens import load_or_create_cipher
+
+            state["cipher"] = load_or_create_cipher(
+                SecretPaths(Settings().teslai_secrets_dir).root / "token.key")
+        return state["cipher"]
+
+    @app.middleware("http")
+    async def require_owner(request: Request, call_next):
+        if not require_login or request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+        if owner_auth.read_session(request.cookies.get(owner_auth.SESSION_COOKIE), secret()) is None:
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Login required."}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+        return await call_next(request)
 
     def eng() -> Engine:
         if state["engine"] is None:
@@ -83,6 +116,54 @@ def create_app(engine: Engine | None = None, account_id: int | None = None) -> F
             vid, tz = vehicle(conn, a, vehicle_id)
             rows = repo.sessions_between(conn, a, vid, start, end, kind=kind)
         return summarize_day(start.date(), tz, rows).sessions
+
+    @app.post("/api/v1/login")
+    def login(body: LoginBody, response: Response):
+        from datetime import UTC
+        from datetime import datetime as dt
+
+        now = dt.now(UTC)
+        outcome = "invalid"
+        user_id = None
+        # Decide and record the outcome inside the transaction, then raise after it
+        # commits, so failed-attempt counters are never rolled back.
+        with eng().begin() as conn:
+            user = conn.execute(text(
+                "SELECT id, password_hash, totp_secret_enc, failed_logins, locked_until "
+                "FROM users WHERE lower(email) = lower(:e) FOR UPDATE"), {"e": body.email}).first()
+            if user is not None and user.locked_until and user.locked_until > now:
+                outcome = "locked"
+            elif (user is not None and user.password_hash and user.totp_secret_enc
+                  and owner_auth.verify_password(body.password, user.password_hash)
+                  and owner_auth.verify_totp(
+                      get_cipher().decrypt(bytes(user.totp_secret_enc)).decode(), body.code)):
+                outcome = "ok"
+                user_id = user.id
+                conn.execute(text("UPDATE users SET failed_logins = 0, locked_until = NULL "
+                                  "WHERE id = :i"), {"i": user.id})
+            elif user is not None:
+                failures = user.failed_logins + 1
+                locked = now + owner_auth.LOCKOUT if failures >= owner_auth.MAX_FAILURES else None
+                conn.execute(text("UPDATE users SET failed_logins = :f, locked_until = :l "
+                                  "WHERE id = :i"),
+                             {"f": 0 if locked else failures, "l": locked, "i": user.id})
+        if outcome == "locked":
+            raise HTTPException(429, "Too many attempts. Try again later.")
+        if outcome != "ok":
+            raise HTTPException(401, "Email, password or code is incorrect.")
+        response.set_cookie(owner_auth.SESSION_COOKIE, owner_auth.sign_session(user_id, secret()),
+                            max_age=int(owner_auth.SESSION_TTL.total_seconds()), httponly=True,
+                            secure=secure_cookies, samesite="strict")
+        return {"ok": True}
+
+    @app.post("/api/v1/logout")
+    def logout(response: Response):
+        response.delete_cookie(owner_auth.SESSION_COOKIE)
+        return {"ok": True}
+
+    @app.get("/login")
+    def login_page():
+        return FileResponse(STATIC / "login.html")
 
     @app.get("/")
     def index():

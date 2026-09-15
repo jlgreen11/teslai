@@ -27,7 +27,7 @@ def client(engine):
                     energy_added_kwh=15.5, charger="ac"),
             Session("idle", t0 + timedelta(hours=3)),
         ], "teslafi_import", 1)
-    yield TestClient(create_app(engine=engine, account_id=a)), v
+    yield TestClient(create_app(engine=engine, account_id=a, require_login=False)), v
 
 
 def test_health_and_vehicle_list_hide_full_vin(client):
