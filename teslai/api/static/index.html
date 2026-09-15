@@ -50,9 +50,14 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: "num
 const today = () => new Date().toLocaleDateString("en-CA");
 
 function detail(s) {
-  if (s.kind === "drive") return s.distance_miles != null ? `${s.distance_miles.toFixed(1)} mi` : "";
-  if (s.kind === "charge") return s.energy_added_kwh != null ? `${s.energy_added_kwh.toFixed(1)} kWh ${s.charger ? s.charger.toUpperCase() : ""}` : "";
-  return "";
+  if (s.kind === "drive") {
+    const route = s.start_place || s.end_place ? ` · ${s.start_place || "?"} → ${s.end_place || "?"}` : "";
+    return (s.distance_miles != null ? `${s.distance_miles.toFixed(1)} mi` : "") + route;
+  }
+  const place = s.end_place || s.start_place;
+  const where = place ? ` · ${place}` : "";
+  if (s.kind === "charge") return s.energy_added_kwh != null ? `${s.energy_added_kwh.toFixed(1)} kWh ${s.charger ? s.charger.toUpperCase() : ""}${s.cost != null ? ` · ${s.cost.toFixed(2)}` : ""}${where}` : where;
+  return where.replace(" · ", "");
 }
 
 async function load() {
@@ -65,6 +70,7 @@ async function load() {
     const day = await r.json();
     $("totals").innerHTML = [
       [day.drives, "drives"], [day.miles.toFixed(1), "miles"], [day.charges, "charges"], [day.kwh_added.toFixed(1), "kWh added"],
+      [new Intl.NumberFormat([], { style: "currency", currency: day.currency }).format(day.charging_cost), "charging cost"],
     ].map(([n, l]) => `<div class="tile"><b>${n}</b><span>${l}</span></div>`).join("");
     const startOfDay = new Date(`${d}T00:00:00`).getTime(), dayMs = 24 * 3600e3;
     $("bar").innerHTML = day.sessions.map((s) => {

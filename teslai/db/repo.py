@@ -115,12 +115,23 @@ def ensure_month_partition(conn: Connection, month_start: date) -> str:
     return name
 
 
+def _coords(loc):
+    if not loc:
+        return None, None
+    return loc.get("latitude"), loc.get("longitude")
+
+
 def replace_sessions(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
-                     end: datetime, sessions, source: str, builder_version: int) -> int:
+                     end: datetime, sessions, source: str, builder_version: int,
+                     places=None) -> int:
     """Replace a vehicle's sessions that start within [start, end) with `sessions`.
 
     Runs inside the caller's transaction, so readers never see a half-rebuilt window.
+    Sessions are tagged with the nearest matching place at their start and end.
     """
+    from teslai.places import match_place
+
+    places = places or []
     owned = conn.execute(
         text("SELECT 1 FROM vehicles WHERE id = :v AND account_id = :a"),
         {"v": vehicle_id, "a": account_id},
@@ -132,44 +143,100 @@ def replace_sessions(conn: Connection, account_id: int, vehicle_id: int, start: 
              "AND start_ts >= :s AND start_ts < :e"),
         {"a": account_id, "v": vehicle_id, "s": start, "e": end},
     )
-    rows = [
-        {"a": account_id, "v": vehicle_id, "k": s.kind, "st": s.start, "et": s.end,
-         "so": s.start_odometer, "eo": s.end_odometer, "sb": s.start_battery,
-         "eb": s.end_battery, "kwh": s.energy_added_kwh, "ch": s.charger,
-         "fl": sorted(s.flags), "src": source, "bv": builder_version}
-        for s in sessions if start <= s.start < end
-    ]
+    rows = []
+    for s in sessions:
+        if not start <= s.start < end:
+            continue
+        sp, ep = match_place(s.start_location, places), match_place(s.end_location, places)
+        slat, slon = _coords(s.start_location)
+        elat, elon = _coords(s.end_location)
+        rows.append({
+            "a": account_id, "v": vehicle_id, "k": s.kind, "st": s.start, "et": s.end,
+            "so": s.start_odometer, "eo": s.end_odometer, "sb": s.start_battery,
+            "eb": s.end_battery, "kwh": s.energy_added_kwh, "ch": s.charger,
+            "fl": sorted(s.flags), "src": source, "bv": builder_version,
+            "slat": slat, "slon": slon, "elat": elat, "elon": elon,
+            "sp": sp.id if sp else None, "ep": ep.id if ep else None})
     if rows:
         conn.execute(
             text("INSERT INTO sessions (account_id, vehicle_id, kind, start_ts, end_ts, "
                  "start_odometer, end_odometer, start_battery, end_battery, energy_added_kwh, "
-                 "charger, flags, source, builder_version) VALUES (:a, :v, :k, :st, :et, :so, "
-                 ":eo, :sb, :eb, :kwh, :ch, :fl, :src, :bv)"),
+                 "charger, flags, source, builder_version, start_latitude, start_longitude, "
+                 "end_latitude, end_longitude, start_place_id, end_place_id) VALUES (:a, :v, :k, "
+                 ":st, :et, :so, :eo, :sb, :eb, :kwh, :ch, :fl, :src, :bv, :slat, :slon, :elat, "
+                 ":elon, :sp, :ep)"),
             rows,
         )
     return len(rows)
 
 
+def upsert_places(conn: Connection, account_id: int, places) -> int:
+    for p in places:
+        conn.execute(text(
+            "INSERT INTO places (account_id, name, kind, latitude, longitude, radius_m) "
+            "VALUES (:a, :n, :k, :lat, :lon, :r) ON CONFLICT (account_id, name) DO UPDATE SET "
+            "kind = EXCLUDED.kind, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, "
+            "radius_m = EXCLUDED.radius_m"),
+            {"a": account_id, "n": p.name, "k": p.kind, "lat": p.latitude, "lon": p.longitude,
+             "r": p.radius_m})
+    return len(places)
+
+
+def list_places(conn: Connection, account_id: int):
+    from teslai.places import Place
+
+    rows = conn.execute(text("SELECT id, name, kind, latitude, longitude, radius_m FROM places "
+                             "WHERE account_id = :a ORDER BY name"), {"a": account_id}).all()
+    return [Place(r.name, r.kind, r.latitude, r.longitude, r.radius_m, r.id) for r in rows]
+
+
+def retag_sessions(conn: Connection, account_id: int) -> int:
+    """Re-match every session's start and end coordinates against current places."""
+    from teslai.places import match_place
+
+    places = list_places(conn, account_id)
+    rows = conn.execute(text("SELECT id, start_latitude, start_longitude, end_latitude, end_longitude "
+                             "FROM sessions WHERE account_id = :a"), {"a": account_id}).all()
+    changed = 0
+    for r in rows:
+        sp = match_place({"latitude": r.start_latitude, "longitude": r.start_longitude}, places)
+        ep = match_place({"latitude": r.end_latitude, "longitude": r.end_longitude}, places)
+        res = conn.execute(text(
+            "UPDATE sessions SET start_place_id = :sp, end_place_id = :ep WHERE id = :i "
+            "AND (start_place_id IS DISTINCT FROM :sp OR end_place_id IS DISTINCT FROM :ep)"),
+            {"sp": sp.id if sp else None, "ep": ep.id if ep else None, "i": r.id})
+        changed += res.rowcount
+    return changed
+
+
 def sessions_between(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
                      end: datetime, kind: str | None = None) -> list[dict]:
-    q = ("SELECT kind, start_ts, end_ts, start_odometer, end_odometer, start_battery, "
-         "end_battery, energy_added_kwh, charger, flags, builder_version FROM sessions "
-         "WHERE account_id = :a AND vehicle_id = :v AND start_ts >= :s AND start_ts < :e")
+    q = ("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, s.start_battery, "
+         "s.end_battery, s.energy_added_kwh, s.charger, s.flags, s.builder_version, "
+         "sp.name AS start_place, ep.name AS end_place, sp.kind AS start_place_kind, "
+         "ep.kind AS end_place_kind FROM sessions s "
+         "LEFT JOIN places sp ON sp.id = s.start_place_id "
+         "LEFT JOIN places ep ON ep.id = s.end_place_id "
+         "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts >= :s AND s.start_ts < :e")
     params = {"a": account_id, "v": vehicle_id, "s": start, "e": end}
     if kind:
-        q += " AND kind = :k"
+        q += " AND s.kind = :k"
         params["k"] = kind
-    return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY start_ts"), params)]
+    return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY s.start_ts"), params)]
 
 
 def sessions_overlapping(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
                          end: datetime) -> list[dict]:
     """Sessions that overlap [start, end), including ones still open."""
     rows = conn.execute(
-        text("SELECT kind, start_ts, end_ts, start_odometer, end_odometer, start_battery, "
-             "end_battery, energy_added_kwh, charger, flags, builder_version FROM sessions "
-             "WHERE account_id = :a AND vehicle_id = :v AND start_ts < :e "
-             "AND (end_ts IS NULL OR end_ts > :s) ORDER BY start_ts"),
+        text("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, "
+             "s.start_battery, s.end_battery, s.energy_added_kwh, s.charger, s.flags, "
+             "s.builder_version, sp.name AS start_place, ep.name AS end_place, "
+             "sp.kind AS start_place_kind, ep.kind AS end_place_kind FROM sessions s "
+             "LEFT JOIN places sp ON sp.id = s.start_place_id "
+             "LEFT JOIN places ep ON ep.id = s.end_place_id "
+             "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts < :e "
+             "AND (s.end_ts IS NULL OR s.end_ts > :s) ORDER BY s.start_ts"),
         {"a": account_id, "v": vehicle_id, "s": start, "e": end},
     )
     return [dict(r._mapping) for r in rows]

@@ -25,13 +25,16 @@ class DaySummary:
     charges: int
     kwh_added: float
     sessions: list[dict]
+    charging_cost: float = 0.0
+    currency: str = "USD"
 
 
-def summarize_day(day: date, tz: ZoneInfo, rows: list[dict]) -> DaySummary:
+def summarize_day(day: date, tz: ZoneInfo, rows: list[dict], tariffs=None) -> DaySummary:
     drives = [r for r in rows if r["kind"] == "drive" and "short" not in (r.get("flags") or [])]
     charges = [r for r in rows if r["kind"] == "charge"]
     miles = sum((r["end_odometer"] or 0) - (r["start_odometer"] or 0) for r in drives
                 if r["end_odometer"] is not None and r["start_odometer"] is not None)
+    sessions = [_session_json(r, tz, tariffs) for r in rows]
     return DaySummary(
         date=day.isoformat(),
         timezone=str(tz),
@@ -39,11 +42,20 @@ def summarize_day(day: date, tz: ZoneInfo, rows: list[dict]) -> DaySummary:
         miles=round(miles, 2),
         charges=len(charges),
         kwh_added=round(sum(r["energy_added_kwh"] or 0 for r in charges), 3),
-        sessions=[_session_json(r, tz) for r in rows],
+        sessions=sessions,
+        charging_cost=round(sum(x["cost"] or 0 for x in sessions if x["kind"] == "charge"), 2),
+        currency=tariffs.currency if tariffs else "USD",
     )
 
 
-def _session_json(r: dict, tz: ZoneInfo) -> dict:
+def _price_kind(r: dict) -> str:
+    kind = r.get("end_place_kind") or r.get("start_place_kind")
+    if r.get("charger") == "dc" and kind != "free":
+        return "supercharger"
+    return {"home": "home", "free": "free", "supercharger": "supercharger"}.get(kind, "public")
+
+
+def _session_json(r: dict, tz: ZoneInfo, tariffs=None) -> dict:
     def local(ts):
         return ts.astimezone(tz).isoformat() if ts else None
 
@@ -60,4 +72,16 @@ def _session_json(r: dict, tz: ZoneInfo) -> dict:
         "energy_added_kwh": r["energy_added_kwh"],
         "charger": r["charger"],
         "flags": list(r.get("flags") or []),
+        "start_place": r.get("start_place"),
+        "end_place": r.get("end_place"),
+        "cost": _cost(r, tz, tariffs),
     }
+
+
+def _cost(r: dict, tz: ZoneInfo, tariffs) -> float | None:
+    if tariffs is None or r["kind"] != "charge" or r["end_ts"] is None:
+        return None
+    from teslai.costs import charge_cost
+
+    return charge_cost(r["start_ts"], r["end_ts"], r["energy_added_kwh"] or 0.0, _price_kind(r),
+                       tz, tariffs)

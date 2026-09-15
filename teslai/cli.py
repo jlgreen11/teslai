@@ -30,6 +30,31 @@ db_app = typer.Typer(help="Database migrations.")
 app.add_typer(db_app, name="db")
 owner_app = typer.Typer(help="Owner login for the web app.")
 app.add_typer(owner_app, name="owner")
+places_app = typer.Typer(help="Named places for tagging drives and pricing charges.")
+app.add_typer(places_app, name="places")
+
+
+@places_app.command("load")
+def places_load(path: Path = typer.Argument(Path("config/places.csv"))) -> None:
+    """Load places from CSV and re-tag every session."""
+    from sqlalchemy import create_engine
+
+    from teslai.db import repo
+    from teslai.places import load_places_csv
+    from teslai.settings import Settings
+    from teslai.worker import single_account_id
+
+    try:
+        places = load_places_csv(path)
+    except (ValueError, FileNotFoundError) as err:
+        typer.echo(str(err), err=True)
+        raise typer.Exit(2) from None
+    engine = create_engine(Settings().database_url)
+    account_id = single_account_id(engine)
+    with engine.begin() as conn:
+        repo.upsert_places(conn, account_id, places)
+        changed = repo.retag_sessions(conn, account_id)
+    typer.echo(f"Loaded {len(places)} places; re-tagged {changed} sessions.")
 
 
 @owner_app.command("create")
@@ -294,7 +319,8 @@ def import_teslafi_cmd(
             vehicle_id, account_id = found
         n = repo.replace_sessions(conn, account_id, vehicle_id, result.first_ts,
                                   result.last_ts + timedelta(seconds=1), result.sessions,
-                                  "teslafi_import", params.version)
+                                  "teslafi_import", params.version,
+                                  places=repo.list_places(conn, account_id))
     typer.echo(f"\nStored {n} sessions for VIN ending {vin[-4:]}.")
 
 

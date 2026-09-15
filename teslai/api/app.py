@@ -102,7 +102,9 @@ def create_app(engine: Engine | None = None, account_id: int | None = None,
             vid, tz = vehicle(conn, a, vehicle_id)
             start, end = day_window(day, tz)
             rows = repo.sessions_overlapping(conn, a, vid, start, end)
-        return asdict(summarize_day(day, tz, rows))
+        from teslai.costs import load_tariffs
+
+        return asdict(summarize_day(day, tz, rows, tariffs=load_tariffs()))
 
     @app.get("/api/v1/vehicles/{vehicle_id}/sessions")
     def sessions(vehicle_id: int, start: datetime = Query(...), end: datetime = Query(...),

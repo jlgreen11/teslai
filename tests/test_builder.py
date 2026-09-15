@@ -141,3 +141,12 @@ def test_teslafi_enum_values_use_teslafi_mapping():
            e("Gear", "P", 10, source="teslafi_import")]
     s = build_sessions(evs, [Connectivity(t(0), True)], until=t(20))
     assert kinds(s) == ["idle", "drive", "idle"]
+
+
+def test_sessions_capture_start_and_end_locations():
+    evs = [e("Location", {"latitude": 39.0, "longitude": -94.5}, 0), *drive_events(5, 45),
+           e("Location", {"latitude": 39.2, "longitude": -94.7}, 44)]
+    s = build_sessions(evs, [Connectivity(t(0), True)], until=t(60))
+    drive = next(x for x in s if x.kind == "drive")
+    assert drive.start_location == {"latitude": 39.0, "longitude": -94.5}
+    assert drive.end_location == {"latitude": 39.2, "longitude": -94.7}

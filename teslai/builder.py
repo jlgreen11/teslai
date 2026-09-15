@@ -58,6 +58,8 @@ class Session:
     energy_added_kwh: float | None = None
     charger: Literal["ac", "dc"] | None = None
     flags: set[str] = field(default_factory=set)
+    start_location: dict | None = None
+    end_location: dict | None = None
 
     @property
     def distance(self) -> float | None:
@@ -104,7 +106,8 @@ class SessionBuilder:
 
     def _open(self, kind: SessionKind, at: datetime) -> None:
         s = Session(kind, at, start_odometer=self._last(at, "Odometer"),
-                    start_battery=self._last(at, "BatteryLevel"))
+                    start_battery=self._last(at, "BatteryLevel"),
+                    start_location=self._last(at, "Location"))
         if kind == "charge":
             self.charge_counter_start = {
                 k: self._last(at, f) or 0.0
@@ -120,6 +123,7 @@ class SessionBuilder:
         s.end = at
         s.end_odometer = self._last(at, "Odometer")
         s.end_battery = self._last(at, "BatteryLevel")
+        s.end_location = self._last(at, "Location")
         if flag:
             s.flags.add(flag)
         if s.kind == "charge":
