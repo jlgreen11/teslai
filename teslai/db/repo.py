@@ -113,3 +113,50 @@ def ensure_month_partition(conn: Connection, month_start: date) -> str:
         f"ALTER TABLE telemetry_events ATTACH PARTITION {name} "
         f"FOR VALUES FROM ('{month_start.isoformat()}') TO ('{nxt.isoformat()}')"))
     return name
+
+
+def replace_sessions(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
+                     end: datetime, sessions, source: str, builder_version: int) -> int:
+    """Replace a vehicle's sessions that start within [start, end) with `sessions`.
+
+    Runs inside the caller's transaction, so readers never see a half-rebuilt window.
+    """
+    owned = conn.execute(
+        text("SELECT 1 FROM vehicles WHERE id = :v AND account_id = :a"),
+        {"v": vehicle_id, "a": account_id},
+    ).scalar_one_or_none()
+    if owned is None:
+        raise TeslaiError("TSL-VIN-REJECTED", f"vehicle id {vehicle_id} not in account")
+    conn.execute(
+        text("DELETE FROM sessions WHERE account_id = :a AND vehicle_id = :v "
+             "AND start_ts >= :s AND start_ts < :e"),
+        {"a": account_id, "v": vehicle_id, "s": start, "e": end},
+    )
+    rows = [
+        {"a": account_id, "v": vehicle_id, "k": s.kind, "st": s.start, "et": s.end,
+         "so": s.start_odometer, "eo": s.end_odometer, "sb": s.start_battery,
+         "eb": s.end_battery, "kwh": s.energy_added_kwh, "ch": s.charger,
+         "fl": sorted(s.flags), "src": source, "bv": builder_version}
+        for s in sessions if start <= s.start < end
+    ]
+    if rows:
+        conn.execute(
+            text("INSERT INTO sessions (account_id, vehicle_id, kind, start_ts, end_ts, "
+                 "start_odometer, end_odometer, start_battery, end_battery, energy_added_kwh, "
+                 "charger, flags, source, builder_version) VALUES (:a, :v, :k, :st, :et, :so, "
+                 ":eo, :sb, :eb, :kwh, :ch, :fl, :src, :bv)"),
+            rows,
+        )
+    return len(rows)
+
+
+def sessions_between(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
+                     end: datetime, kind: str | None = None) -> list[dict]:
+    q = ("SELECT kind, start_ts, end_ts, start_odometer, end_odometer, start_battery, "
+         "end_battery, energy_added_kwh, charger, flags, builder_version FROM sessions "
+         "WHERE account_id = :a AND vehicle_id = :v AND start_ts >= :s AND start_ts < :e")
+    params = {"a": account_id, "v": vehicle_id, "s": start, "e": end}
+    if kind:
+        q += " AND kind = :k"
+        params["k"] = kind
+    return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY start_ts"), params)]

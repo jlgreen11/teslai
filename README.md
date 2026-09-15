@@ -2,7 +2,7 @@
 
 A personal Tesla data logger and TeslaFi replacement, built on Tesla's official Fleet Telemetry. It logs drives, charges, idle and sleep time from your own car into your own database, and imports your TeslaFi history.
 
-**Status:** early build. Phase 0 (foundations) is in progress. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and build phases.
+**Status:** early build. Phase 0 (foundations) is done; phase 1 (TeslaFi import and session builder) is in progress. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and build phases.
 
 ## Quickstart (phase 0)
 
@@ -29,6 +29,26 @@ teslai doctor --offline
 ```
 
 Every failure prints an error code, the likely cause and the exact fix. The full list is in [docs/errors.md](docs/errors.md).
+
+## Import TeslaFi history (phase 1)
+
+Download your raw logging history from TeslaFi (Settings, Advanced, Download TeslaFi Data) into a folder outside this repository. Then do a dry run:
+
+```bash
+teslai import teslafi ~/teslafi-export --tz America/Chicago
+```
+
+It prints what it read and skipped per file, then drive and charge totals per month. Nothing is stored until you add `--write --vin <VIN>`.
+
+To check the result against TeslaFi's own numbers, save TeslaFi's drives and charges JSON and run the history gate:
+
+```bash
+teslai gate history ~/teslafi-export --tz America/Chicago \
+  --answer-key drives.json --answer-key charges.json \
+  --switch-date 2024-01-01 --report gate.json
+```
+
+Each month passes when drive count, miles, charge count and kWh added are within 1% of TeslaFi and drive miles agree with the odometer. The command exits non-zero if any month fails.
 
 ## Development
 
