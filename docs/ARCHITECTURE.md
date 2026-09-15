@@ -899,6 +899,7 @@ FastAPI generates OpenAPI for free. Typer gives CLI help text. fleet-telemetry e
 | 48 | DX | teslai upgrade command | Mechanical | P1 | No upgrade path | Manual |
 | 49 | DX | Phase 0 hello path on a throwaway endpoint | Mechanical | P1 | First live drive otherwise equals cutover | Test at cutover |
 | 50 | DX | Self-hoster app-registration friction recorded for sharing gate | Mechanical | P3 | Only matters if sharing | Solve now |
+| 51 | Gate | Plan approved; TeslaMate adoption spike not adopted | User | Owner decision | Owner instructed to build | Adoption spike |
 
 ## GSTACK REVIEW REPORT
 
@@ -910,7 +911,6 @@ FastAPI generates OpenAPI for free. Typer gives CLI help text. fleet-telemetry e
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | Skipped: no UI scope detected; recommended before phase 1 UI |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 1 | ISSUES_OPEN (PLAN via /autoplan) | score: 3/10 → 6/10, TTHW: 3-5h → 90min |
 
-- **VERDICT:** ENG CLEARED (PLAN via /autoplan). The CEO review has one user challenge awaiting the owner at the final gate.
+- **VERDICT:** CEO + ENG + DX reviewed; ENG CLEARED (PLAN via /autoplan). Approved by the owner's instruction to build on 2026-09-14. The user challenge (TeslaMate adoption spike) was not adopted; the owner's build direction stands.
 
-**UNRESOLVED DECISIONS:**
-- User challenge: run a one-week TeslaMate adoption spike before phase 0, or keep building from scratch (awaiting owner at /autoplan final gate)
+NO UNRESOLVED DECISIONS
