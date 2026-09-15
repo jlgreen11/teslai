@@ -154,10 +154,16 @@ def single_account_id(engine: Engine) -> int:
 
 
 def run(engine: Engine, host: str, port: int, topic_base: str, client_id: str = "teslai-worker",
-        account_id: int | None = None) -> None:  # pragma: no cover - exercised in integration
+        account_id: int | None = None,
+        recordings_dir: str | None = None) -> None:  # pragma: no cover - integration
+    from pathlib import Path
+
     import paho.mqtt.client as mqtt
 
+    from teslai.recorder import PayloadRecorder
+
     ingestor = Ingestor(engine, account_id or single_account_id(engine))
+    recorder = PayloadRecorder(Path(recordings_dir)) if recordings_dir else None
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id,
                          clean_session=False, manual_ack=True)
 
@@ -167,8 +173,11 @@ def run(engine: Engine, host: str, port: int, topic_base: str, client_id: str = 
                      (f"{topic_base}/+/alerts/#", 1), (f"{topic_base}/+/errors/#", 1)])
 
     def on_message(c, _userdata, msg):
+        received_at = datetime.now(UTC)
         try:
-            if ingestor.handle(msg.topic, msg.payload):
+            if recorder is not None:
+                recorder.write(msg.topic, msg.payload, received_at)
+            if ingestor.handle(msg.topic, msg.payload, received_at):
                 c.ack(msg.mid, msg.qos)
         except Exception:
             log.exception("failed to ingest %s; leaving unacknowledged", msg.topic)

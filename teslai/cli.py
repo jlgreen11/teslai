@@ -366,7 +366,33 @@ def worker(
                 "waiting for an account (run an import or teslai tesla login): %s", reason)
             time.sleep(60)
     worker_mod.run(engine, s.mqtt_host, s.mqtt_port, s.mqtt_topic_base, client_id=client_id,
-                   account_id=account_id)
+                   account_id=account_id,
+                   recordings_dir=str(s.teslai_recordings_dir) if s.teslai_recordings_dir else None)
+
+
+@app.command()
+def replay(
+    paths: list[Path] = typer.Argument(..., help="Recording files or directories."),
+    dry_run: bool = typer.Option(False, help="Count records without writing."),
+) -> None:
+    """Replay recorded MQTT payloads through the ingest path."""
+    from sqlalchemy import create_engine
+
+    from teslai import worker as worker_mod
+    from teslai.recorder import read_records
+    from teslai.settings import Settings
+
+    records = list(read_records(paths))
+    typer.echo(f"{len(records)} records"
+               + (f" from {records[0].received_at:%Y-%m-%d %H:%M} to "
+                  f"{records[-1].received_at:%Y-%m-%d %H:%M} UTC" if records else ""))
+    if dry_run or not records:
+        return
+    engine = create_engine(Settings().database_url)
+    ingestor = worker_mod.Ingestor(engine, worker_mod.single_account_id(engine))
+    for r in records:
+        ingestor.handle(r.topic, r.payload, r.received_at)
+    typer.echo("Replay complete.")
 
 
 @tesla_app.command("register")

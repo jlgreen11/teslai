@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     mqtt_host: str = "localhost"
     mqtt_port: int = 1883
     mqtt_topic_base: str = "telemetry"
+    teslai_recordings_dir: Path | None = Path("./recordings")
 
     tesla_client_id: str = ""
     tesla_client_secret: str = ""

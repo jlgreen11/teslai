@@ -51,16 +51,21 @@ def test_partition_created_after_rows_landed_in_default(conn):
     repo.insert_events(conn, a, [Event(v, T0, "BatteryLevel", 70.5)])
     name = repo.ensure_month_partition(conn, date(2026, 9, 1))
     assert name == "telemetry_events_2026_09"
-    assert conn.execute(text(f"SELECT count(*) FROM {name}")).scalar() == 1
-    assert conn.execute(text("SELECT count(*) FROM telemetry_events_default")).scalar() == 0
+    # Integration tests share one database, so count only this test's vehicle.
+    mine = {"v": v}
+    assert conn.execute(text(f"SELECT count(*) FROM {name} WHERE vehicle_id = :v"), mine).scalar() == 1
+    assert conn.execute(text("SELECT count(*) FROM telemetry_events_default "
+                             "WHERE vehicle_id = :v AND ts >= '2026-09-01' AND ts < '2026-10-01'"),
+                        mine).scalar() == 0
     assert repo.ensure_month_partition(conn, date(2026, 9, 1)) == name
     repo.insert_events(conn, a, [Event(v, T0 + timedelta(days=2), "BatteryLevel", 69.0)])
-    assert conn.execute(text(f"SELECT count(*) FROM {name}")).scalar() == 2
+    assert conn.execute(text(f"SELECT count(*) FROM {name} WHERE vehicle_id = :v"), mine).scalar() == 2
 
 
 def test_usage_accumulates(conn):
     a, v = _setup(conn)
     repo.add_usage(conn, a, v, date(2026, 9, 1), "signal", 100, "VehicleSpeed")
     repo.add_usage(conn, a, v, date(2026, 9, 1), "signal", 50, "VehicleSpeed")
-    n = conn.execute(text("SELECT count FROM api_usage WHERE field='VehicleSpeed'")).scalar()
+    n = conn.execute(text("SELECT count FROM api_usage WHERE vehicle_id = :v "
+                          "AND field = 'VehicleSpeed'"), {"v": v}).scalar()
     assert n == 150
