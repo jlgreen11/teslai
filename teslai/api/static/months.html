@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>teslai months</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main>
+  <nav class="tabs"><a href="/">Day</a><a href="/months" aria-current="page">Months</a><a href="/battery">Battery</a></nav>
+  <header>
+    <h1>Months</h1>
+    <div class="nav">
+      <select id="vehicle" aria-label="Vehicle"></select>
+      <button id="prev" aria-label="Previous year">&larr;</button>
+      <b id="year"></b>
+      <button id="next" aria-label="Next year">&rarr;</button>
+    </div>
+  </header>
+  <section class="totals" id="tiles" aria-live="polite"></section>
+  <div class="scroll" id="list"></div>
+</main>
+<script src="/static/common.js"></script>
+<script>
+let year = new Date().getFullYear();
+const money = (n, c) => new Intl.NumberFormat([], { style: "currency", currency: c || "USD" }).format(n);
+async function load() {
+  $("year").textContent = year;
+  const v = $("vehicle").value;
+  const r = await authFetch(`/api/v1/vehicles/${v}/totals?start=${year}-01-01&end=${year}-12-31&group=month`);
+  if (!r) return;
+  const rows = await r.json();
+  const sum = (k) => rows.reduce((a, x) => a + x[k], 0);
+  $("tiles").innerHTML = [[sum("drives"), "drives"], [sum("miles").toFixed(0), "miles"], [sum("charges"), "charges"],
+    [sum("kwh_added").toFixed(0), "kWh added"], [money(sum("charging_cost")), "charging cost"]]
+    .map(([n, l]) => `<div class="tile"><b>${n}</b><span>${l}</span></div>`).join("");
+  if (!rows.length) { $("list").innerHTML = `<p class="empty">No drives or charges in ${year}.</p>`; return; }
+  $("list").innerHTML = `<table><thead><tr><th>Month</th><th>Drives</th><th>Miles</th><th>Hours driving</th><th>Charges</th><th>kWh</th><th>Cost</th><th>Export</th></tr></thead><tbody>${
+    rows.map((m) => {
+      const [y, mo] = m.period.split("-");
+      const last = new Date(Number(y), Number(mo), 0).getDate();
+      const csv = `/api/v1/vehicles/${v}/sessions.csv?start=${m.period}-01&end=${m.period}-${String(last).padStart(2, "0")}`;
+      return `<tr><td>${new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString([], { month: "long" })}</td><td>${m.drives}</td><td>${m.miles.toFixed(1)}</td><td>${(m.drive_minutes / 60).toFixed(1)}</td><td>${m.charges}</td><td>${m.kwh_added.toFixed(1)}</td><td>${money(m.charging_cost)}</td><td><a href="${csv}">CSV</a></td></tr>`;
+    }).join("")}</tbody></table>`;
+}
+$("prev").onclick = () => { year -= 1; load(); };
+$("next").onclick = () => { year += 1; load(); };
+initVehiclePage(load);
+</script>
+</body>
+</html>

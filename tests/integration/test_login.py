@@ -63,3 +63,14 @@ def test_unknown_email_gets_same_message(setup):
     r = c.post("/api/v1/login", json={"email": "nobody@example.org", "password": "x" * 12,
                                        "code": "123456"})
     assert r.status_code == 401 and "incorrect" in r.json()["detail"]
+
+
+def test_new_pages_require_login_and_assets_are_public(setup):
+    c, email, totp_secret = setup
+    for path in ("/months", "/battery"):
+        r = c.get(path, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert c.get("/static/app.css").status_code == 200
+    c.post("/api/v1/login", json={"email": email, "password": "correct horse battery",
+                                  "code": owner_auth.totp(totp_secret)})
+    assert "teslai battery" in c.get("/battery").text and "teslai months" in c.get("/months").text

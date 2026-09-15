@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine, text
 
@@ -22,7 +23,7 @@ from teslai.settings import Settings
 STATIC = Path(__file__).parent / "static"
 
 
-PUBLIC_PATHS = {"/healthz", "/login", "/api/v1/login"}
+PUBLIC_PATHS = {"/healthz", "/login", "/api/v1/login", "/static/app.css", "/static/common.js"}
 
 
 class LoginBody(BaseModel):
@@ -219,6 +220,17 @@ def create_app(engine: Engine | None = None, account_id: int | None = None,
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/months")
+    def months_page():
+        return FileResponse(STATIC / "months.html")
+
+    @app.get("/battery")
+    def battery_page():
+        return FileResponse(STATIC / "battery.html")
+
+    # Shared CSS and JS only; pages above stay behind login via the middleware.
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     return app
 
