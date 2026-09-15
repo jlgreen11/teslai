@@ -73,7 +73,9 @@ def _session_json(r: dict, tz: ZoneInfo, tariffs=None) -> dict:
         "charger": r["charger"],
         "flags": list(r.get("flags") or []),
         "start_place": r.get("start_place"),
-        "end_place": r.get("end_place"),
+        "end_place": r.get("end_place") or r.get("supercharger_site"),
+        "cost_source": "invoice" if r.get("invoice_total") is not None else (
+            "estimate" if r["kind"] == "charge" else None),
         "cost": _cost(r, tz, tariffs),
     }
 
@@ -83,5 +85,6 @@ def _cost(r: dict, tz: ZoneInfo, tariffs) -> float | None:
         return None
     from teslai.costs import charge_cost
 
+    invoice = r.get("invoice_total")
     return charge_cost(r["start_ts"], r["end_ts"], r["energy_added_kwh"] or 0.0, _price_kind(r),
-                       tz, tariffs)
+                       tz, tariffs, invoice_total=None if invoice is None else float(invoice))

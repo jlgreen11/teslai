@@ -494,6 +494,37 @@ def tesla_login() -> None:
     typer.echo("Tesla login stored. Next: teslai pair")
 
 
+@tesla_app.command("charging-history")
+def tesla_charging_history(days: int = typer.Option(90, help="How many days back to sync.")) -> None:
+    """Sync Supercharger sessions, fees and invoice ids, and link them to local charges."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+
+    from teslai.db import repo
+    from teslai.errors import TeslaiError
+    from teslai.settings import Settings
+    from teslai.tesla.charging_history import fetch_history
+    from teslai.tesla.regions import base_url
+    from teslai.worker import single_account_id
+
+    s = Settings()
+    engine = create_engine(s.database_url)
+    end = datetime.now(UTC)
+    try:
+        token = _access_token(s)
+        with http_client() as http:
+            records = fetch_history(http, base_url(s.tesla_region), token, s.tesla_vin,
+                                    end - timedelta(days=days), end)
+        account_id = single_account_id(engine)
+        with engine.begin() as conn:
+            vehicle_id = repo.vehicle_id_for_vin(conn, account_id, s.tesla_vin)
+            result = repo.store_charging_history(conn, account_id, vehicle_id, records)
+    except TeslaiError as err:
+        _fail(err)
+    typer.echo(f"Stored {result['stored']} Supercharger sessions; {result['matched']} matched to local charges.")
+
+
 @app.command()
 def pair() -> None:
     """Show the link that installs teslai's virtual key on the car."""
@@ -648,6 +679,7 @@ def monitor(
     engine = create_engine(s.database_url)
     cert = SecretPaths(s.teslai_secrets_dir).server_cert
     last_refresh_attempt = datetime.min.replace(tzinfo=UTC)
+    last_history_sync = datetime.min.replace(tzinfo=UTC)
     while True:
         try:
             account_id = single_account_id(engine)
@@ -662,6 +694,22 @@ def monitor(
                                      rule_config=load_rule_config())
             log.info("checks done: %d fired, %d resolved", len(result["fired"]), len(result["resolved"]))
             now = datetime.now(UTC)
+            if s.tesla_client_id and s.tesla_vin and now - last_history_sync > timedelta(days=1):
+                last_history_sync = now
+                try:
+                    from teslai.db import repo
+                    from teslai.tesla.charging_history import fetch_history
+                    from teslai.tesla.regions import base_url
+
+                    with http_client() as http:
+                        records = fetch_history(http, base_url(s.tesla_region), _access_token(s),
+                                                s.tesla_vin, now - timedelta(days=7), now)
+                    with engine.begin() as conn:
+                        vid = repo.vehicle_id_for_vin(conn, account_id, s.tesla_vin)
+                        log.info("charging history: %s",
+                                 repo.store_charging_history(conn, account_id, vid, records))
+                except Exception as err:  # noqa: BLE001 - retried tomorrow
+                    log.warning("charging history sync failed: %s", str(err).splitlines()[0][:200])
             if s.tesla_client_id and now - last_refresh_attempt > timedelta(days=7):
                 last_refresh_attempt = now
                 try:

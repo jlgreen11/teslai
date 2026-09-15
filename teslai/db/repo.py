@@ -7,7 +7,7 @@ feature code does not change.
 
 import json
 from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import Connection, text
 
@@ -215,9 +215,11 @@ def sessions_between(conn: Connection, account_id: int, vehicle_id: int, start: 
     q = ("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, s.start_battery, "
          "s.end_battery, s.energy_added_kwh, s.charger, s.flags, s.builder_version, "
          "sp.name AS start_place, ep.name AS end_place, sp.kind AS start_place_kind, "
-         "ep.kind AS end_place_kind FROM sessions s "
+         "ep.kind AS end_place_kind, sc.total_due AS invoice_total, sc.currency AS invoice_currency, "
+         "sc.site_name AS supercharger_site FROM sessions s "
          "LEFT JOIN places sp ON sp.id = s.start_place_id "
          "LEFT JOIN places ep ON ep.id = s.end_place_id "
+         "LEFT JOIN supercharger_sessions sc ON sc.matched_session_id = s.id "
          "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts >= :s AND s.start_ts < :e")
     params = {"a": account_id, "v": vehicle_id, "s": start, "e": end}
     if kind:
@@ -233,9 +235,11 @@ def sessions_overlapping(conn: Connection, account_id: int, vehicle_id: int, sta
         text("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, "
              "s.start_battery, s.end_battery, s.energy_added_kwh, s.charger, s.flags, "
              "s.builder_version, sp.name AS start_place, ep.name AS end_place, "
-             "sp.kind AS start_place_kind, ep.kind AS end_place_kind FROM sessions s "
+             "sp.kind AS start_place_kind, ep.kind AS end_place_kind, sc.total_due AS invoice_total, "
+             "sc.currency AS invoice_currency, sc.site_name AS supercharger_site FROM sessions s "
              "LEFT JOIN places sp ON sp.id = s.start_place_id "
              "LEFT JOIN places ep ON ep.id = s.end_place_id "
+             "LEFT JOIN supercharger_sessions sc ON sc.matched_session_id = s.id "
              "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts < :e "
              "AND (s.end_ts IS NULL OR s.end_ts > :s) ORDER BY s.start_ts"),
         {"a": account_id, "v": vehicle_id, "s": start, "e": end},
@@ -249,3 +253,33 @@ def charge_range_points(conn: Connection, account_id: int, vehicle_id: int) -> l
         "AND vehicle_id = :v AND kind = 'charge' AND end_ts IS NOT NULL "
         "AND end_rated_range IS NOT NULL ORDER BY end_ts"), {"a": account_id, "v": vehicle_id})
     return [dict(r._mapping) for r in rows]
+
+
+def store_charging_history(conn: Connection, account_id: int, vehicle_id: int, records) -> dict[str, int]:
+    """Upsert Tesla charging history records and link each to the overlapping local charge."""
+    import json as _json
+
+    from teslai.tesla.charging_history import best_match
+
+    stored = matched = 0
+    for r in records:
+        charges = conn.execute(text(
+            "SELECT id, start_ts, end_ts FROM sessions WHERE account_id = :a AND vehicle_id = :v "
+            "AND kind = 'charge' AND start_ts < :e AND (end_ts IS NULL OR end_ts > :s)"),
+            {"a": account_id, "v": vehicle_id, "s": r.start_ts - timedelta(hours=1),
+             "e": (r.stop_ts or r.start_ts) + timedelta(hours=1)}).all()
+        match = best_match(r, [dict(c._mapping) for c in charges])
+        conn.execute(text("""
+            INSERT INTO supercharger_sessions (account_id, vehicle_id, tesla_session_id, site_name, start_ts,
+                stop_ts, currency, total_due, invoice_content_ids, matched_session_id, raw)
+            VALUES (:a, :v, :sid, :site, :st, :sp, :cur, :tot, :inv, :m, CAST(:raw AS jsonb))
+            ON CONFLICT (vehicle_id, tesla_session_id) DO UPDATE SET site_name = EXCLUDED.site_name,
+                stop_ts = EXCLUDED.stop_ts, currency = EXCLUDED.currency, total_due = EXCLUDED.total_due,
+                invoice_content_ids = EXCLUDED.invoice_content_ids,
+                matched_session_id = EXCLUDED.matched_session_id, raw = EXCLUDED.raw, fetched_at = now()"""),
+            {"a": account_id, "v": vehicle_id, "sid": r.tesla_session_id, "site": r.site_name,
+             "st": r.start_ts, "sp": r.stop_ts, "cur": r.currency, "tot": r.total_due,
+             "inv": r.invoice_content_ids, "m": match, "raw": _json.dumps(r.raw)})
+        stored += 1
+        matched += int(match is not None)
+    return {"stored": stored, "matched": matched}
