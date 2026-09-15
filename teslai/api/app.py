@@ -10,7 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import Engine, create_engine, text
 
@@ -115,6 +115,45 @@ def create_app(engine: Engine | None = None, account_id: int | None = None,
             vid, tz = vehicle(conn, a, vehicle_id)
             rows = repo.charge_range_points(conn, a, vid)
         return asdict(build_report(rows, tz, min_level=min_level))
+
+    def _local_range(conn, vehicle_id: int, start: date, end: date):
+        if end < start:
+            raise HTTPException(422, "end must not be before start")
+        if (end - start).days > 3660:
+            raise HTTPException(422, "range is limited to 10 years")
+        a = account(conn)
+        vid, tz = vehicle(conn, a, vehicle_id)
+        range_start, _ = day_window(start, tz)
+        _, range_end = day_window(end, tz)
+        return a, vid, tz, range_start, range_end
+
+    @app.get("/api/v1/vehicles/{vehicle_id}/totals")
+    def period_totals(vehicle_id: int, start: date = Query(...), end: date = Query(...),
+                      group: str = "month"):
+        from teslai.costs import load_tariffs
+        from teslai.totals import FORMATS, totals
+
+        if group not in FORMATS:
+            raise HTTPException(422, f"group must be one of {sorted(FORMATS)}")
+        with eng().connect() as conn:
+            a, vid, tz, rs, re_ = _local_range(conn, vehicle_id, start, end)
+            rows = repo.sessions_between(conn, a, vid, rs, re_)
+        return totals(rows, tz, group, tariffs=load_tariffs())
+
+    @app.get("/api/v1/vehicles/{vehicle_id}/sessions.csv")
+    def sessions_export(vehicle_id: int, start: date = Query(...), end: date = Query(...),
+                        kind: str | None = None):
+        from teslai.costs import load_tariffs
+        from teslai.totals import sessions_csv
+
+        if kind is not None and kind not in {"drive", "charge", "idle", "sleep", "unreachable"}:
+            raise HTTPException(422, "unknown kind")
+        with eng().connect() as conn:
+            a, vid, tz, rs, re_ = _local_range(conn, vehicle_id, start, end)
+            rows = repo.sessions_between(conn, a, vid, rs, re_, kind=kind)
+        filename = f"teslai-{kind or 'sessions'}-{start}-{end}.csv"
+        return PlainTextResponse(sessions_csv(rows, tz, tariffs=load_tariffs()), media_type="text/csv",
+                                 headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     @app.get("/api/v1/vehicles/{vehicle_id}/sessions")
     def sessions(vehicle_id: int, start: datetime = Query(...), end: datetime = Query(...),
