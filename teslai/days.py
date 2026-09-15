@@ -62,7 +62,34 @@ def _session_json(r: dict, tz: ZoneInfo, tariffs=None) -> dict:
     distance = None
     if r["start_odometer"] is not None and r["end_odometer"] is not None:
         distance = round(r["end_odometer"] - r["start_odometer"], 2)
+    drive = r["kind"] == "drive"
+    duration = (r["end_ts"] - r["start_ts"]).total_seconds() if r["end_ts"] else None
+    used = r.get("energy_used_kwh")
+    rated = r.get("rated_miles_used")
+    wh_per_mile = round(used * 1000 / distance, 1) if drive and used and distance and distance >= 0.1 else None
+    efficiency = round(distance / rated * 100, 1) if drive and rated and rated >= 0.1 and distance else None
+    energy_cost = round(used * tariffs.home_default, 2) if tariffs and drive and used else None
+    savings = None
+    if tariffs and drive and distance and energy_cost is not None and tariffs.gas_mpg > 0:
+        from teslai.costs import gas_savings
+
+        savings = gas_savings(distance, energy_cost, tariffs)
     return {
+        "id": r.get("id"),
+        "duration_s": duration,
+        "energy_used_kwh": round(used, 2) if used is not None else None,
+        "rated_miles_used": round(rated, 1) if rated is not None and drive else None,
+        "wh_per_mile": wh_per_mile,
+        "efficiency_pct": efficiency,
+        "energy_cost": energy_cost,
+        "gas_savings": savings,
+        "avg_outside_temp_c": _round(r.get("avg_outside_temp"), 1),
+        "avg_inside_temp_c": _round(r.get("avg_inside_temp"), 1),
+        "max_speed": _round(r.get("max_speed"), 0),
+        "avg_speed": _round(r.get("avg_speed"), 0),
+        "max_charger_power": _round(r.get("max_charger_power"), 1),
+        "start_odometer": _round(r.get("start_odometer"), 1),
+        "end_odometer": _round(r.get("end_odometer"), 1),
         "kind": r["kind"],
         "start": local(r["start_ts"]),
         "end": local(r["end_ts"]),
@@ -78,6 +105,10 @@ def _session_json(r: dict, tz: ZoneInfo, tariffs=None) -> dict:
             "estimate" if r["kind"] == "charge" else None),
         "cost": _cost(r, tz, tariffs),
     }
+
+
+def _round(value, digits: int):
+    return None if value is None else round(float(value), digits)
 
 
 def _cost(r: dict, tz: ZoneInfo, tariffs) -> float | None:

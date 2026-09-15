@@ -87,7 +87,7 @@ class DemoGenerator:
             "TpmsPressureFr": round(tpms_base + self.rng.uniform(-0.02, 0.02), 2),
             "TpmsPressureRl": round(tpms_base + 0.05 + self.rng.uniform(-0.02, 0.02), 2),
             "TpmsPressureRr": round(tpms_base + 0.05 + self.rng.uniform(-0.02, 0.02), 2),
-            "Version": self.car.version, "FastChargerPresent": fast,
+            "Version": self.car.version, "FastChargerPresent": fast, "ChargeLimitSoc": 80.0,
         }
         if loc is not None:
             fields["Location"] = {"latitude": round(loc[0], 6), "longitude": round(loc[1], 6)}
@@ -215,3 +215,29 @@ def generate(days: int = 180, end: date | None = None, seed: int = 7) -> tuple[l
     end = end or datetime.now(UTC).astimezone(TZ).date() - timedelta(days=1)
     start = end - timedelta(days=days - 1)
     return DemoGenerator(start, days, seed).run(), PLACES
+
+
+def seed(conn, account_id: int, vehicle_id: int, days: int = 180, end: date | None = None,
+         seed: int = 7) -> tuple[int, int]:
+    """Replace a vehicle's samples and sessions with generated history. Returns (samples, sessions)."""
+    from sqlalchemy import text
+
+    from teslai.builder import BuilderParams, SessionBuilder
+    from teslai.db import repo
+    from teslai.importer.teslafi import to_events
+    from teslai.samples import enrich_sessions, sample_from_fields, upsert_samples
+
+    rows, places = generate(days, end, seed)
+    events, connectivity = to_events(rows, vehicle_id)
+    builder = SessionBuilder(params=BuilderParams())
+    builder.feed(events, connectivity)
+    sessions = builder.finalize(rows[-1].ts)
+    conn.execute(text("DELETE FROM samples WHERE account_id = :a AND vehicle_id = :v"),
+                 {"a": account_id, "v": vehicle_id})
+    repo.upsert_places(conn, account_id, places)
+    upsert_samples(conn, account_id, vehicle_id, (sample_from_fields(r.ts, r.fields) for r in rows), "demo")
+    start, stop = rows[0].ts - timedelta(days=1), rows[-1].ts + timedelta(days=1)
+    n = repo.replace_sessions(conn, account_id, vehicle_id, start, stop, sessions, "teslafi_import",
+                              BuilderParams().version, places=repo.list_places(conn, account_id))
+    enrich_sessions(conn, account_id, vehicle_id, start, stop, PACK_KWH)
+    return len(rows), n

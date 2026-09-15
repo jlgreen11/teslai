@@ -24,3 +24,8 @@ config/tariffs.yaml
 config/places.csv
 config/rules.yaml
 backups/
+.gstack/
+
+# Built web app (npm run build in web/)
+teslai/api/web/
+node_modules/

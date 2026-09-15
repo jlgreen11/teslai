@@ -56,4 +56,6 @@ def test_unknown_vehicle_is_404_and_bad_range_is_422(client):
 def test_index_page_served(client):
     c, _ = client
     r = c.get("/")
-    assert r.status_code == 200 and "teslai day" in r.text
+    # The React build is optional in tests: either the app shell or a build hint.
+    assert (r.status_code == 200 and '<div id="root">' in r.text) or (
+        r.status_code == 503 and "npm run build" in r.text)

@@ -20,7 +20,8 @@ from teslai.reducer import Event, StateReducer
 
 COLUMNS = ["latitude", "longitude", "speed", "power", "battery_level", "rated_range", "odometer",
            "energy_remaining", "inside_temp", "outside_temp", "charger_power", "charge_energy_added",
-           "charge_state", "gear", "tpms_fl", "tpms_fr", "tpms_rl", "tpms_rr"]
+           "charge_state", "gear", "tpms_fl", "tpms_fr", "tpms_rl", "tpms_rr", "version", "locked",
+           "charge_limit"]
 
 FIELD_TO_COLUMN = {
     "VehicleSpeed": "speed", "DrivePower": "power", "BatteryLevel": "battery_level",
@@ -28,8 +29,9 @@ FIELD_TO_COLUMN = {
     "InsideTemp": "inside_temp", "OutsideTemp": "outside_temp", "ACChargingPower": "charger_power",
     "ChargeEnergyAdded": "charge_energy_added", "DetailedChargeState": "charge_state", "Gear": "gear",
     "TpmsPressureFl": "tpms_fl", "TpmsPressureFr": "tpms_fr", "TpmsPressureRl": "tpms_rl",
-    "TpmsPressureRr": "tpms_rr",
+    "TpmsPressureRr": "tpms_rr", "Version": "version", "Locked": "locked", "ChargeLimitSoc": "charge_limit",
 }
+TEXT_COLUMNS = {"charge_state", "gear", "version"}
 
 
 def sample_from_fields(ts: datetime, fields: dict) -> dict:
@@ -40,7 +42,12 @@ def sample_from_fields(ts: datetime, fields: dict) -> dict:
             row["latitude"], row["longitude"] = value.get("latitude"), value.get("longitude")
         elif field in FIELD_TO_COLUMN and value is not None:
             col = FIELD_TO_COLUMN[field]
-            row[col] = value if col in ("charge_state", "gear") else float(value)
+            if col in TEXT_COLUMNS:
+                row[col] = str(value)
+            elif col == "locked":
+                row[col] = bool(value)
+            else:
+                row[col] = float(value)
     if row["charger_power"] is None and fields.get("DCChargingPower") is not None:
         row["charger_power"] = float(fields["DCChargingPower"])
     if row["power"] is None and fields.get("PackVoltage") is not None and fields.get("PackCurrent") is not None:

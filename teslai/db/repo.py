@@ -210,17 +210,28 @@ def retag_sessions(conn: Connection, account_id: int) -> int:
     return changed
 
 
+_SESSION_SELECT = (
+    "SELECT s.id, s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, s.start_battery, "
+    "s.end_battery, s.energy_added_kwh, s.charger, s.flags, s.builder_version, "
+    "s.energy_used_kwh, s.rated_miles_used, s.avg_outside_temp, s.avg_inside_temp, s.max_speed, "
+    "s.avg_speed, s.max_charger_power, "
+    "sp.name AS start_place, ep.name AS end_place, sp.kind AS start_place_kind, "
+    "ep.kind AS end_place_kind, sc.total_due AS invoice_total, sc.currency AS invoice_currency, "
+    "sc.site_name AS supercharger_site FROM sessions s "
+    "LEFT JOIN places sp ON sp.id = s.start_place_id "
+    "LEFT JOIN places ep ON ep.id = s.end_place_id "
+    "LEFT JOIN supercharger_sessions sc ON sc.matched_session_id = s.id "
+    "WHERE s.account_id = :a AND s.vehicle_id = :v ")
+
+SAMPLE_COLUMNS = {"latitude", "longitude", "speed", "power", "battery_level", "rated_range", "odometer",
+                  "energy_remaining", "inside_temp", "outside_temp", "charger_power", "charge_energy_added",
+                  "charge_state", "gear", "tpms_fl", "tpms_fr", "tpms_rl", "tpms_rr", "version", "locked",
+                  "charge_limit"}
+
+
 def sessions_between(conn: Connection, account_id: int, vehicle_id: int, start: datetime,
                      end: datetime, kind: str | None = None) -> list[dict]:
-    q = ("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, s.start_battery, "
-         "s.end_battery, s.energy_added_kwh, s.charger, s.flags, s.builder_version, "
-         "sp.name AS start_place, ep.name AS end_place, sp.kind AS start_place_kind, "
-         "ep.kind AS end_place_kind, sc.total_due AS invoice_total, sc.currency AS invoice_currency, "
-         "sc.site_name AS supercharger_site FROM sessions s "
-         "LEFT JOIN places sp ON sp.id = s.start_place_id "
-         "LEFT JOIN places ep ON ep.id = s.end_place_id "
-         "LEFT JOIN supercharger_sessions sc ON sc.matched_session_id = s.id "
-         "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts >= :s AND s.start_ts < :e")
+    q = _SESSION_SELECT + "AND s.start_ts >= :s AND s.start_ts < :e"
     params = {"a": account_id, "v": vehicle_id, "s": start, "e": end}
     if kind:
         q += " AND s.kind = :k"
@@ -232,18 +243,67 @@ def sessions_overlapping(conn: Connection, account_id: int, vehicle_id: int, sta
                          end: datetime) -> list[dict]:
     """Sessions that overlap [start, end), including ones still open."""
     rows = conn.execute(
-        text("SELECT s.kind, s.start_ts, s.end_ts, s.start_odometer, s.end_odometer, "
-             "s.start_battery, s.end_battery, s.energy_added_kwh, s.charger, s.flags, "
-             "s.builder_version, sp.name AS start_place, ep.name AS end_place, "
-             "sp.kind AS start_place_kind, ep.kind AS end_place_kind, sc.total_due AS invoice_total, "
-             "sc.currency AS invoice_currency, sc.site_name AS supercharger_site FROM sessions s "
-             "LEFT JOIN places sp ON sp.id = s.start_place_id "
-             "LEFT JOIN places ep ON ep.id = s.end_place_id "
-             "LEFT JOIN supercharger_sessions sc ON sc.matched_session_id = s.id "
-             "WHERE s.account_id = :a AND s.vehicle_id = :v AND s.start_ts < :e "
-             "AND (s.end_ts IS NULL OR s.end_ts > :s) ORDER BY s.start_ts"),
+        text(_SESSION_SELECT + "AND s.start_ts < :e AND (s.end_ts IS NULL OR s.end_ts > :s) "
+             "ORDER BY s.start_ts"),
         {"a": account_id, "v": vehicle_id, "s": start, "e": end},
     )
+    return [dict(r._mapping) for r in rows]
+
+
+def session_by_id(conn: Connection, account_id: int, vehicle_id: int, session_id: int) -> dict | None:
+    row = conn.execute(text(_SESSION_SELECT + "AND s.id = :id"),
+                       {"a": account_id, "v": vehicle_id, "id": session_id}).first()
+    return dict(row._mapping) if row else None
+
+
+def latest_session(conn: Connection, account_id: int, vehicle_id: int) -> dict | None:
+    row = conn.execute(text(_SESSION_SELECT + "ORDER BY s.start_ts DESC LIMIT 1"),
+                       {"a": account_id, "v": vehicle_id}).first()
+    return dict(row._mapping) if row else None
+
+
+def adjacent_session_ids(conn: Connection, account_id: int, vehicle_id: int, kind: str,
+                         start_ts: datetime) -> tuple[int | None, int | None]:
+    params = {"a": account_id, "v": vehicle_id, "k": kind, "t": start_ts}
+    base = "SELECT id FROM sessions WHERE account_id = :a AND vehicle_id = :v AND kind = :k "
+    prev = conn.execute(text(base + "AND start_ts < :t ORDER BY start_ts DESC LIMIT 1"), params).scalar()
+    nxt = conn.execute(text(base + "AND start_ts > :t ORDER BY start_ts LIMIT 1"), params).scalar()
+    return prev, nxt
+
+
+def _checked(columns: list[str]) -> list[str]:
+    bad = set(columns) - SAMPLE_COLUMNS
+    if bad:
+        raise ValueError(f"unknown sample columns: {sorted(bad)}")
+    return columns
+
+
+def samples_between(conn: Connection, account_id: int, vehicle_id: int, start: datetime, end: datetime,
+                    columns: list[str], require: str | None = None) -> list[dict]:
+    cols = _checked(columns)
+    q = (f"SELECT ts, {', '.join(cols)} FROM samples WHERE account_id = :a AND vehicle_id = :v "
+         "AND ts >= :s AND ts <= :e")
+    if require:
+        q += f" AND {_checked([require])[0]} IS NOT NULL"
+    rows = conn.execute(text(q + " ORDER BY ts"), {"a": account_id, "v": vehicle_id, "s": start, "e": end})
+    return [dict(r._mapping) for r in rows]
+
+
+def latest_samples(conn: Connection, account_id: int, vehicle_id: int, columns: list[str]) -> dict:
+    """The newest non-null value of each column, plus the newest sample time as last_seen."""
+    parts = ["(SELECT max(ts) FROM samples WHERE account_id = :a AND vehicle_id = :v) AS last_seen"]
+    parts += [f"(SELECT {c} FROM samples WHERE account_id = :a AND vehicle_id = :v AND {c} IS NOT NULL "
+              f"ORDER BY ts DESC LIMIT 1) AS {c}" for c in _checked(columns)]
+    return dict(conn.execute(text("SELECT " + ", ".join(parts)), {"a": account_id, "v": vehicle_id}).one()._mapping)
+
+
+def daily_tires(conn: Connection, account_id: int, vehicle_id: int, tz: str, start: datetime,
+                end: datetime) -> list[dict]:
+    rows = conn.execute(text(
+        "SELECT (ts AT TIME ZONE :tz)::date AS day, avg(tpms_fl) AS fl, avg(tpms_fr) AS fr, "
+        "avg(tpms_rl) AS rl, avg(tpms_rr) AS rr, avg(outside_temp) AS outside_temp FROM samples "
+        "WHERE account_id = :a AND vehicle_id = :v AND ts >= :s AND ts < :e AND tpms_fl IS NOT NULL "
+        "GROUP BY 1 ORDER BY 1"), {"a": account_id, "v": vehicle_id, "tz": tz, "s": start, "e": end})
     return [dict(r._mapping) for r in rows]
 
 

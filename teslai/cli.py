@@ -591,38 +591,21 @@ def demo_seed(
     name: str = typer.Option("Demo Model Y", help="Display name."),
 ) -> None:
     """Generate and store realistic synthetic history (no real data)."""
-    from datetime import timedelta
-
     from sqlalchemy import create_engine, text
 
     from teslai import demo
-    from teslai.builder import BuilderParams, SessionBuilder
     from teslai.db import repo
-    from teslai.importer.teslafi import to_events
-    from teslai.samples import enrich_sessions, sample_from_fields, upsert_samples
     from teslai.settings import Settings
 
-    s = Settings()
-    rows, places = demo.generate(days)
-    events, connectivity = to_events(rows, 0)
-    builder = SessionBuilder(params=BuilderParams())
-    builder.feed(events, connectivity)
-    sessions = builder.finalize(rows[-1].ts)
-    engine = create_engine(s.database_url)
+    engine = create_engine(Settings().database_url)
     with engine.begin() as conn:
         ids = conn.execute(text("SELECT id FROM accounts ORDER BY id LIMIT 2")).scalars().all()
         account_id = ids[0] if len(ids) == 1 else repo.create_account(conn, "owner")
         vid = conn.execute(text("SELECT id FROM vehicles WHERE vin = :v"), {"v": vin}).scalar()
         if vid is None:
             vid = repo.create_vehicle(conn, account_id, vin, name, str(demo.TZ))
-        conn.execute(text("DELETE FROM samples WHERE vehicle_id = :v"), {"v": vid})
-        repo.upsert_places(conn, account_id, places)
-        upsert_samples(conn, account_id, vid, (sample_from_fields(r.ts, r.fields) for r in rows), "demo")
-        start, end = rows[0].ts - timedelta(days=1), rows[-1].ts + timedelta(days=1)
-        n = repo.replace_sessions(conn, account_id, vid, start, end, sessions, "teslafi_import",
-                                  BuilderParams().version, places=repo.list_places(conn, account_id))
-        enrich_sessions(conn, account_id, vid, start, end, demo.PACK_KWH)
-    typer.echo(f"Demo car {name}: {len(rows)} samples, {n} sessions over {days} days.")
+        samples, sessions = demo.seed(conn, account_id, vid, days)
+    typer.echo(f"Demo car {name}: {samples} samples, {sessions} sessions over {days} days.")
 
 
 @app.command()

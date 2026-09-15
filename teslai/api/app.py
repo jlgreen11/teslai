@@ -1,7 +1,7 @@
 """Owner-facing HTTP API and day view.
 
 Every route except /healthz, /login and the login API requires the owner's
-session cookie (teslai.owner_auth). The API still serves no location data.
+session cookie (teslai.owner_auth). Web app endpoints live in teslai.api.views.
 """
 
 from dataclasses import asdict
@@ -21,6 +21,7 @@ from teslai.db import repo
 from teslai.settings import Settings
 
 STATIC = Path(__file__).parent / "static"
+WEB = Path(__file__).parent / "web"
 
 
 PUBLIC_PATHS = {"/healthz", "/login", "/api/v1/login", "/static/app.css", "/static/common.js"}
@@ -217,20 +218,27 @@ def create_app(engine: Engine | None = None, account_id: int | None = None,
     def login_page():
         return FileResponse(STATIC / "login.html")
 
-    @app.get("/")
-    def index():
-        return FileResponse(STATIC / "index.html")
-
-    @app.get("/months")
-    def months_page():
-        return FileResponse(STATIC / "months.html")
-
-    @app.get("/battery")
-    def battery_page():
-        return FileResponse(STATIC / "battery.html")
-
     # Shared CSS and JS only; pages above stay behind login via the middleware.
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+    from teslai.api import views
+
+    views.register(app, eng, account, vehicle)
+
+    # The React app (built from web/ into teslai/api/web). Every other non-API path
+    # returns its index.html so client-side routes survive a reload.
+    if (WEB / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def web_app(path: str):
+        if path.startswith(("api/", "static/", "assets/")):
+            raise HTTPException(404, "Not found.")
+        index = WEB / "index.html"
+        if not index.is_file():
+            return PlainTextResponse("The web app is not built. Run: cd web && npm ci && npm run build",
+                                     status_code=503)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
     return app
 
