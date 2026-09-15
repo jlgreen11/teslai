@@ -9,15 +9,17 @@
 
 | Phase | State | What exists |
 |---|---|---|
-| 0. Foundations | **Built** | `teslai` CLI (`init`, `doctor`, `errors`), error catalog, private CA and app keys, `telemetry.yaml` and `enums.yaml`, Postgres 16 + PostGIS (arm64), durable Mosquitto, account-scoped repository, CI with Postgres and Mosquitto |
-| 1. Import and core | **Built, not yet run on real data** | DST-safe TeslaFi importer, carry-forward reducer with history, session builder, sessions table, `teslai import teslafi`, `teslai gate history`, day view |
-| 2. Live and cutover | **Code built; deployment waits on the owner** | MQTT worker with manual acks and payload recording, `teslai replay`, Tesla OAuth and partner registration, encrypted single-refresher tokens, `teslai tesla register/login`, `teslai pair`, `teslai telemetry server-config/push/status`, owner login with TOTP, containers and edge services verified locally, deployment runbook |
-| 3. Daily parity | **Started** | Charging cost with time-of-use tariffs and gas savings |
-| 4. Full parity | Not started | |
+| 0. Foundations | **Built** | `teslai` CLI (`init`, `doctor`, `errors`), error catalog, private CA and app keys, telemetry and enum config, Postgres 16 + PostGIS (arm64), durable Mosquitto, account-scoped repository, CI (unit, integration with Postgres and Mosquitto, runtime-only imports) |
+| 1. Import and core | **Built, not yet run on real data** | DST-safe TeslaFi importer, carry-forward reducer, session builder, `teslai import teslafi`, `teslai gate history` |
+| 2. Live and cutover | **Code built; deployment waits on the owner** | MQTT worker with manual acks and payload recording, `teslai replay`, live session rebuild, Tesla OAuth, registration and encrypted tokens, `teslai tesla register/login/charging-history`, `teslai pair`, `teslai telemetry server-config/push/status/remove`, `teslai gate live`, owner login with TOTP, pinned container images, [deployment and cutover runbook](runbooks/deploy.md) |
+| 3. Daily parity | **Built** | Day, months and battery pages; totals and CSV export; places; time-of-use charging cost; Supercharger invoice totals; alerts for unlocked away, windows, tire pressure, new software, silent telemetry, billing, certificates and backups; drive and charge summaries; nightly backups with restore checks |
+| 4. Full parity | **In progress** | Home Assistant via MQTT discovery. Not built: vehicle controls, schedules and triggers (owner has controls disabled), lifetime map, share links, service log |
 
-**Waiting on the owner:** the TeslaFi full-history CSV and history API token for the real history gate; the server, domain, Tesla developer app and key pairing for live telemetry ([deployment runbook](runbooks/deploy.md)).
+**Waiting on the owner:** the TeslaFi full-history CSV and history API token for the real history gate; the server, domain, Tesla developer app and key pairing for live telemetry.
 
-**Verified during the build, not in the original plan:** fleet-telemetry's MQTT payloads have no timestamp (receive time is used); reliable acks only work for vehicle-data records; the command proxy image's entrypoint is the proxy itself; containers must run as the host user to read `secrets/`.
+**Verified during the build, not in the original plan:** fleet-telemetry's MQTT payloads have no timestamp (receive time is used); reliable acks only work for vehicle-data records; the command proxy image's entrypoint is the proxy itself; containers must run as the host user to read `secrets/`; `httpx` is a runtime dependency.
+
+**Still unverified:** the `vehicle_location` OAuth scope name, TeslaFi's real CSV and history API column names, and most charging history response fields. Each parser fails loudly with `TSL-IMPORT-SCHEMA` rather than guessing silently.
 
 ## Decisions made
 

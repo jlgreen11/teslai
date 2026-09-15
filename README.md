@@ -2,7 +2,7 @@
 
 A personal Tesla data logger and TeslaFi replacement, built on Tesla's official Fleet Telemetry. It logs drives, charges, idle and sleep time from your own car into your own database, and imports your TeslaFi history.
 
-**Status:** early build. Phase 0 (foundations) is done; phase 1 (TeslaFi import and session builder) is in progress. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and build phases.
+**Status:** phases 0 to 3 are built and tested; phase 4 is in progress. Running it against a real car needs a server, a domain and a Tesla developer app: follow [docs/runbooks/deploy.md](docs/runbooks/deploy.md). Build details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and build phases.
 
 ## Quickstart (phase 0)
 

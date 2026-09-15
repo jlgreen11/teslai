@@ -57,7 +57,7 @@ function detail(s) {
   }
   const place = s.end_place || s.start_place;
   const where = place ? ` · ${place}` : "";
-  if (s.kind === "charge") return s.energy_added_kwh != null ? `${s.energy_added_kwh.toFixed(1)} kWh ${s.charger ? s.charger.toUpperCase() : ""}${s.cost != null ? ` · ${s.cost.toFixed(2)}` : ""}${where}` : where;
+  if (s.kind === "charge") return s.energy_added_kwh != null ? `${s.energy_added_kwh.toFixed(1)} kWh ${s.charger ? s.charger.toUpperCase() : ""}${s.cost != null ? ` · ${new Intl.NumberFormat([], { style: "currency", currency: window.dayCurrency || "USD" }).format(s.cost)}` : ""}${where}` : where;
   return where.replace(" · ", "");
 }
 
@@ -69,6 +69,7 @@ async function load() {
     if (r.status === 401) { location.href = "/login"; return; }
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const day = await r.json();
+    window.dayCurrency = day.currency;
     $("totals").innerHTML = [
       [day.drives, "drives"], [day.miles.toFixed(1), "miles"], [day.charges, "charges"], [day.kwh_added.toFixed(1), "kWh added"],
       [new Intl.NumberFormat([], { style: "currency", currency: day.currency }).format(day.charging_cost), "charging cost"],
